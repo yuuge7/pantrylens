@@ -1,0 +1,162 @@
+name: Android release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pantrylens-main-release
+  queue: max
+
+jobs:
+  release:
+    name: Build and publish Android release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.0"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate Flutter platform configuration
+        run: flutter build apk --config-only
+
+      - name: Analyze Dart code
+        run: flutter analyze --no-pub
+
+      - name: Configure Android release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          required = (
+              "ANDROID_KEYSTORE_BASE64",
+              "ANDROID_KEYSTORE_PASSWORD",
+              "ANDROID_KEY_ALIAS",
+              "ANDROID_KEY_PASSWORD",
+          )
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit("Missing required repository secrets: " + ", ".join(missing))
+
+          root = Path.cwd()
+          try:
+              keystore = base64.b64decode(
+                  os.environ["ANDROID_KEYSTORE_BASE64"], validate=True
+              )
+          except ValueError as error:
+              raise SystemExit("ANDROID_KEYSTORE_BASE64 is not valid base64") from error
+          if not keystore:
+              raise SystemExit("ANDROID_KEYSTORE_BASE64 decoded to an empty file")
+
+          (root / "pantrylens-release-key.jks").write_bytes(keystore)
+          properties = {
+              "storeFile": "../pantrylens-release-key.jks",
+              "storePassword": os.environ["ANDROID_KEYSTORE_PASSWORD"],
+              "keyPassword": os.environ["ANDROID_KEY_PASSWORD"],
+              "keyAlias": os.environ["ANDROID_KEY_ALIAS"],
+          }
+          key_properties = root / "android" / "key.properties"
+          key_properties.write_text(
+              "".join(f"{key}={value}\n" for key, value in properties.items()),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Bump app version
+        id: version
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          pubspec = Path("pubspec.yaml")
+          text = pubspec.read_text(encoding="utf-8")
+          match = re.search(
+              r"(?m)^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)\s*$", text
+          )
+          if not match:
+              raise SystemExit("pubspec.yaml must contain version: X.Y.Z+BUILD")
+
+          major, minor, patch, build = map(int, match.groups())
+          tags = set(
+              subprocess.check_output(
+                  ["git", "tag", "--list", "v*"], text=True
+              ).splitlines()
+          )
+          while f"v{major}.{minor}.{patch + 1}" in tags:
+              patch += 1
+          patch += 1
+          build = max(build + 1, int(os.environ["GITHUB_RUN_NUMBER"]))
+
+          release_version = f"{major}.{minor}.{patch}"
+          app_version = f"{release_version}+{build}"
+          pubspec.write_text(
+              text[:match.start()] + f"version: {app_version}" + text[match.end():],
+              encoding="utf-8",
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"release_version={release_version}\n")
+              output.write(f"app_version={app_version}\n")
+          print(f"Preparing PantryLens {release_version} (build {build})")
+          PY
+
+      - name: Build signed APK
+        run: flutter build apk --release --no-pub
+
+      - name: Build signed Android App Bundle
+        run: flutter build appbundle --release --no-pub
+
+      - name: Commit version and push release tag
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml
+          git commit -m "chore(release): PantryLens v${RELEASE_VERSION}"
+          git tag -a "v${RELEASE_VERSION}" -m "PantryLens v${RELEASE_VERSION}"
+          git push --atomic origin HEAD:refs/heads/main "refs/tags/v${RELEASE_VERSION}"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.version.outputs.release_version }}
+          name: PantryLens v${{ steps.version.outputs.release_version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab

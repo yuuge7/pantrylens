@@ -1,0 +1,58 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.history
+.svn/
+.build/
+.buildlog/
+.swiftpm/
+migrate_working_dir/
+
+# IDE files
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter and Dart generated files
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+
+# Android build artifacts
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Dart build outputs
+app.*.symbols
+app.*.map.json
+
+# Local signing credentials and private keys
+/pantrylens-release-key.jks
+*.jks
+*.keystore
+/android/key.properties
+
+# Local machine configuration and secrets
+/android/local.properties
+.env
+.env.*
+!.env.example
+
+# Generated platform files
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/flutter_export_environment.sh
+/ios/Runner/GeneratedPluginRegistrant.*
+
+# Keep repository documentation limited to the public project README.
+*.md
+!README.md
