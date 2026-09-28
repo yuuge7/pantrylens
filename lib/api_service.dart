@@ -34,8 +34,13 @@ class ApiService {
       if (product is! Map<String, dynamic>) return _emptyProductData();
 
       return {
-        'product_name': _nonEmptyString(product['product_name']),
-        'image_url': _nonEmptyString(product['image_url']),
+        'product_name':
+            _nonEmptyString(product['product_name']) ??
+            _nonEmptyString(product['product_name_en']) ??
+            _nonEmptyString(product['generic_name']),
+        'image_url':
+            _nonEmptyString(product['image_url']) ??
+            _nonEmptyString(product['image_front_url']),
       };
     } on TimeoutException {
       return _emptyProductData();

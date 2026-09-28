@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#143F35</color>
+    <!-- Matches the Flutter scaffold background so launch has no flash. -->
+    <color name="launch_background">#F5F7F3</color>
 </resources>

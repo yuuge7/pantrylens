@@ -6,15 +6,20 @@ Open Food Facts, and keep inventory quantities in a local SQLite database.
 
 ## Features
 
-- Barcode scanning with the device camera
+- Barcode scanning with the device camera, flashlight and camera switching, and
+  manual barcode entry
 - Open Food Facts product lookup when an item is first scanned
-- Local inventory storage with quantity increments on repeat scans
-- Product images, with a local fallback when an image is unavailable
+- Home overview of items to use soon, expired items, and recent additions
+- Inventory with search, filters, sorting, quantity controls, and editable
+  names and best-before dates
+- Shopping list that collects used-up items and checks them off when rescanned
+- Settings for light, dark, or system theme, default best-before period,
+  use-soon warnings, product lookup, continuous scanning, and haptics
 - Material 3 interface and a custom PantryLens launcher icon
 
 The inventory database stays on the device. Open Food Facts is contacted when a
-new barcode is scanned; existing items can be incremented without a product
-lookup.
+new barcode is scanned and product lookup is on; existing items can be
+incremented without a product lookup.
 
 ## Technology
 
@@ -23,6 +28,7 @@ lookup.
 - SQLite through `sqflite` and `path_provider`
 - `mobile_scanner` for barcode scanning
 - `http` for the Open Food Facts API
+- `shared_preferences` for settings and `package_info_plus` for the app version
 
 ## Requirements
 
@@ -63,8 +69,9 @@ flutter analyze
 flutter test integration_test/pantrylens_smoke_test.dart -d <device-id>
 ```
 
-The integration checks cover inventory insertion and increments, scanner
-navigation, and parsing an Open Food Facts response. The API parsing check uses
+The integration checks cover inventory insertion and increments, tab
+navigation, quantity controls, switching to dark mode, scanner navigation, and
+parsing an Open Food Facts response. The API parsing check uses
 a mock HTTP client so it remains deterministic and does not depend on emulator
 DNS or external service availability.
 
@@ -81,10 +88,17 @@ integration tests do not require the Android release signing key.
 ```text
 lib/
   api_service.dart       Open Food Facts client
+  app_theme.dart         Light and dark themes and freshness colors
   database_helper.dart   SQLite database access
-  main.dart              App, inventory screen, and scanner
+  main.dart              App entry point and providers
+  pantry_actions.dart    Shared flows: item editing, undo, manual entry
   pantry_item.dart       Inventory data model
-  pantry_provider.dart   Inventory state and scan handling
+  pantry_provider.dart   Inventory, shopping list, and scan handling
+  settings_provider.dart Persisted app settings
+  shopping_item.dart     Shopping list data model
+  screens/               Tab shell, Home, Inventory, Shopping, Settings,
+                         item editor, and scanner
+  widgets/               Shared widgets
 assets/
   icon.png               Launcher icon source image
 integration_test/        Device integration checks

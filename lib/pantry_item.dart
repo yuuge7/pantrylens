@@ -34,6 +34,18 @@ class PantryItem {
     );
   }
 
+  /// Whole calendar days until [expirationDate]; negative once it has passed.
+  int daysUntilExpiry([DateTime? now]) {
+    final today = now ?? DateTime.now();
+    final start = DateTime.utc(today.year, today.month, today.day);
+    final end = DateTime.utc(
+      expirationDate.year,
+      expirationDate.month,
+      expirationDate.day,
+    );
+    return end.difference(start).inDays;
+  }
+
   Map<String, Object?> toMap() {
     final map = <String, Object?>{
       'barcode': barcode,

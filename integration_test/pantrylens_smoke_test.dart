@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -9,6 +10,7 @@ import 'package:pantrylens/api_service.dart';
 import 'package:pantrylens/database_helper.dart';
 import 'package:pantrylens/main.dart';
 import 'package:pantrylens/pantry_provider.dart';
+import 'package:pantrylens/settings_provider.dart';
 
 class _FakeApiService extends ApiService {
   @override
@@ -16,6 +18,9 @@ class _FakeApiService extends ApiService {
     return const {'product_name': 'Emulator Test Product', 'image_url': null};
   }
 }
+
+Finder _tab(String label) =>
+    find.descendant(of: find.byType(NavigationBar), matching: find.text(label));
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -25,10 +30,14 @@ void main() {
     final provider = PantryProvider(apiService: _FakeApiService());
     await provider.loadItems();
 
-    final barcode = 'pantrylens-test-${DateTime.now().millisecondsSinceEpoch}';
+    final barcode = '${DateTime.now().millisecondsSinceEpoch}';
     await tester.pumpWidget(
-      ChangeNotifierProvider<PantryProvider>.value(
-        value: provider,
+      MultiProvider(
+        providers: [
+          // In-memory settings, so the test leaves device preferences alone.
+          ChangeNotifierProvider(create: (_) => SettingsProvider()),
+          ChangeNotifierProvider<PantryProvider>.value(value: provider),
+        ],
         child: const MyApp(),
       ),
     );
@@ -46,8 +55,28 @@ void main() {
     expect(savedItem!.quantity, 2);
 
     await tester.pumpAndSettle();
+    await tester.tap(_tab('Inventory'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), barcode);
+    await tester.pumpAndSettle();
     expect(find.text('Emulator Test Product'), findsOneWidget);
 
+    await tester.tap(find.byTooltip('Add one of Emulator Test Product'));
+    await tester.pumpAndSettle();
+    savedItem = await database.getItemByBarcode(barcode);
+    expect(savedItem!.quantity, 3);
+
+    await tester.tap(_tab('Settings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dark'));
+    await tester.pumpAndSettle();
+    expect(
+      Theme.of(tester.element(find.text('Appearance'))).brightness,
+      Brightness.dark,
+    );
+
+    await tester.tap(_tab('Inventory'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Scan item'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
@@ -57,9 +86,7 @@ void main() {
     await provider.loadItems();
   });
 
-  testWidgets('parses an Open Food Facts product response', (
-    tester,
-  ) async {
+  testWidgets('parses an Open Food Facts product response', (tester) async {
     final client = MockClient((request) async {
       expect(request.method, 'GET');
       expect(
