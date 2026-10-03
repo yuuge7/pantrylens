@@ -15,7 +15,7 @@ class DatabaseHelper {
   static const String _databaseName = 'pantrylens.db';
   static const String _tableName = 'pantry_items';
   static const String _shoppingTableName = 'shopping_items';
-  static const int _databaseVersion = 2;
+  static const int _databaseVersion = 3;
 
   Future<Database>? _databaseFuture;
 
@@ -44,6 +44,21 @@ class DatabaseHelper {
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createShoppingTable(db);
+        } else if (oldVersion < 3) {
+          await db.execute(
+            'ALTER TABLE $_shoppingTableName ADD COLUMN imageUrl TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE $_shoppingTableName ADD COLUMN quantity '
+            'INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0)',
+          );
+          // Entries for products still in the pantry can borrow their photo.
+          await db.execute('''
+            UPDATE $_shoppingTableName SET imageUrl = (
+              SELECT imageUrl FROM $_tableName
+              WHERE $_tableName.barcode = $_shoppingTableName.barcode
+            )
+          ''');
         }
       },
     );
@@ -55,6 +70,8 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         barcode TEXT,
+        imageUrl TEXT,
+        quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
         isChecked INTEGER NOT NULL DEFAULT 0
       )
     ''');
@@ -93,6 +110,30 @@ class DatabaseHelper {
   Future<int> deleteAllItems() async {
     final db = await database;
     return db.delete(_tableName);
+  }
+
+  /// Saves [items] in one transaction, so a failed import changes nothing.
+  ///
+  /// Items whose barcode is already stored overwrite that row. With
+  /// [replaceAll], every existing item is deleted first.
+  Future<void> importItems(
+    List<PantryItem> items, {
+    required bool replaceAll,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      if (replaceAll) await txn.delete(_tableName);
+      for (final item in items) {
+        final values = item.toMap()..remove('id');
+        final updated = await txn.update(
+          _tableName,
+          values,
+          where: 'barcode = ?',
+          whereArgs: [item.barcode],
+        );
+        if (updated == 0) await txn.insert(_tableName, values);
+      }
+    });
   }
 
   Future<PantryItem?> getItemByBarcode(String barcode) async {

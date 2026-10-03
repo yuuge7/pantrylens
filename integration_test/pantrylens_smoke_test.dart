@@ -8,9 +8,13 @@ import 'package:integration_test/integration_test.dart';
 import 'package:provider/provider.dart';
 import 'package:pantrylens/api_service.dart';
 import 'package:pantrylens/database_helper.dart';
+import 'package:pantrylens/inventory_backup.dart';
 import 'package:pantrylens/main.dart';
+import 'package:pantrylens/pantry_item.dart';
 import 'package:pantrylens/pantry_provider.dart';
+import 'package:pantrylens/screens/photo_viewer.dart';
 import 'package:pantrylens/settings_provider.dart';
+import 'package:pantrylens/shopping_item.dart';
 
 class _FakeApiService extends ApiService {
   @override
@@ -22,6 +26,17 @@ class _FakeApiService extends ApiService {
 Finder _tab(String label) =>
     find.descendant(of: find.byType(NavigationBar), matching: find.text(label));
 
+Widget _app(PantryProvider provider) {
+  return MultiProvider(
+    providers: [
+      // In-memory settings, so the test leaves device preferences alone.
+      ChangeNotifierProvider(create: (_) => SettingsProvider()),
+      ChangeNotifierProvider<PantryProvider>.value(value: provider),
+    ],
+    child: const MyApp(),
+  );
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -31,16 +46,7 @@ void main() {
     await provider.loadItems();
 
     final barcode = '${DateTime.now().millisecondsSinceEpoch}';
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          // In-memory settings, so the test leaves device preferences alone.
-          ChangeNotifierProvider(create: (_) => SettingsProvider()),
-          ChangeNotifierProvider<PantryProvider>.value(value: provider),
-        ],
-        child: const MyApp(),
-      ),
-    );
+    await tester.pumpWidget(_app(provider));
     await tester.pumpAndSettle();
     expect(find.text('PantryLens'), findsOneWidget);
 
@@ -84,6 +90,83 @@ void main() {
 
     await database.deleteItem(savedItem.id!);
     await provider.loadItems();
+  });
+
+  testWidgets('edits a shopping list entry', (tester) async {
+    final database = DatabaseHelper.instance;
+    final provider = PantryProvider(apiService: _FakeApiService());
+    await provider.loadItems();
+
+    final name = 'Emulator List Entry ${DateTime.now().millisecondsSinceEpoch}';
+    Future<ShoppingItem> saved() async => (await database.getShoppingItems())
+        .firstWhere((entry) => entry.name == name);
+
+    await tester.pumpWidget(_app(provider));
+    await tester.pumpAndSettle();
+    expect(await provider.addShoppingItem(name), isTrue);
+
+    await tester.tap(_tab('Shopping'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Add one of $name'));
+    await tester.pumpAndSettle();
+    expect((await saved()).quantity, 2);
+
+    await tester.tap(find.text(name));
+    await tester.pumpAndSettle();
+    expect(find.text('Quantity to buy'), findsOneWidget);
+    await tester.tap(find.text('In basket'));
+    await tester.pumpAndSettle();
+    expect((await saved()).isChecked, isTrue);
+
+    await provider.removeShoppingItem(await saved());
+  });
+
+  testWidgets('exports and imports the inventory', (tester) async {
+    final database = DatabaseHelper.instance;
+    final provider = PantryProvider(apiService: _FakeApiService());
+    final barcode = '${DateTime.now().millisecondsSinceEpoch}';
+    PantryItem item(int quantity) => PantryItem(
+      barcode: barcode,
+      name: 'Emulator Backup Product',
+      imageUrl: 'https://example.com/photo.jpg',
+      quantity: quantity,
+      expirationDate: DateTime(2030, 1, 15),
+    );
+
+    final decoded = InventoryBackup.decode(InventoryBackup.encode([item(5)]));
+    expect(decoded.single.toMap(), item(5).toMap());
+    expect(
+      () => InventoryBackup.decode('{"items": [{"name": "No barcode"}]}'),
+      throwsFormatException,
+    );
+    expect(() => InventoryBackup.decode('not json'), throwsFormatException);
+
+    await provider.importItems(decoded, replaceAll: false);
+    expect((await database.getItemByBarcode(barcode))!.quantity, 5);
+
+    // Importing a barcode again updates the item instead of duplicating it.
+    await provider.importItems([item(7)], replaceAll: false);
+    final saved = await database.getItemByBarcode(barcode);
+    expect(saved!.quantity, 7);
+    expect(
+      provider.items.where((entry) => entry.barcode == barcode),
+      hasLength(1),
+    );
+
+    await database.deleteItem(saved.id!);
+    await provider.loadItems();
+  });
+
+  testWidgets('asks Open Food Facts for the full-size photo', (tester) async {
+    const photos = 'https://images.openfoodfacts.org/images/products/301';
+    expect(
+      PhotoViewer.fullSizeUrl('$photos/front_en.879.400.jpg'),
+      '$photos/front_en.879.full.jpg',
+    );
+    expect(
+      PhotoViewer.fullSizeUrl('https://example.com/photo.400.jpg'),
+      'https://example.com/photo.400.jpg',
+    );
   });
 
   testWidgets('parses an Open Food Facts product response', (tester) async {

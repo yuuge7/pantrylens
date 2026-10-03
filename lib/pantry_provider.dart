@@ -200,7 +200,11 @@ class PantryProvider extends ChangeNotifier {
       int? shoppingItemId;
       if (addToShoppingList && !_isOnShoppingList(item)) {
         shoppingItemId = await _databaseHelper.insertShoppingItem(
-          ShoppingItem(name: item.name, barcode: item.barcode),
+          ShoppingItem(
+            name: item.name,
+            barcode: item.barcode,
+            imageUrl: item.imageUrl,
+          ),
         );
       }
       return RemovedItem(item: item, shoppingItemId: shoppingItemId);
@@ -242,6 +246,30 @@ class PantryProvider extends ChangeNotifier {
     }
   }
 
+  /// Adds [items] from a backup. Items already in the pantry take the
+  /// backup's values; with [replaceAll], the pantry is emptied first.
+  Future<void> importItems(
+    List<PantryItem> items, {
+    required bool replaceAll,
+  }) async {
+    try {
+      await _databaseHelper.importItems(items, replaceAll: replaceAll);
+    } finally {
+      await _reloadAndNotify();
+    }
+  }
+
+  /// The pantry item [entry] refers to: the same barcode, else the same name.
+  PantryItem? pantryItemFor(ShoppingItem entry) {
+    final name = entry.name.toLowerCase();
+    PantryItem? sameName;
+    for (final item in _items) {
+      if (item.barcode == entry.barcode) return item;
+      if (item.name.toLowerCase() == name) sameName ??= item;
+    }
+    return sameName;
+  }
+
   bool _isOnShoppingList(PantryItem item) {
     return _shoppingItems.any(
       (entry) =>
@@ -252,7 +280,11 @@ class PantryProvider extends ChangeNotifier {
   }
 
   /// Returns false when an unchecked entry with the same name already exists.
-  Future<bool> addShoppingItem(String name, {String? barcode}) async {
+  Future<bool> addShoppingItem(
+    String name, {
+    String? barcode,
+    String? imageUrl,
+  }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return false;
     final duplicate = _shoppingItems.any(
@@ -263,7 +295,7 @@ class PantryProvider extends ChangeNotifier {
 
     try {
       await _databaseHelper.insertShoppingItem(
-        ShoppingItem(name: trimmed, barcode: barcode),
+        ShoppingItem(name: trimmed, barcode: barcode, imageUrl: imageUrl),
       );
       return true;
     } finally {
@@ -271,19 +303,21 @@ class PantryProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> setShoppingItemChecked(ShoppingItem item, bool isChecked) async {
+  Future<void> updateShoppingItem(ShoppingItem item) async {
     final index = _shoppingItems.indexWhere((entry) => entry.id == item.id);
     if (index != -1) {
-      _shoppingItems[index] = item.copyWith(isChecked: isChecked);
+      _shoppingItems[index] = item;
       notifyListeners();
     }
     try {
-      await _databaseHelper.updateShoppingItem(
-        item.copyWith(isChecked: isChecked),
-      );
+      await _databaseHelper.updateShoppingItem(item);
     } finally {
       await _reloadAndNotify();
     }
+  }
+
+  Future<void> setShoppingItemChecked(ShoppingItem item, bool isChecked) {
+    return updateShoppingItem(item.copyWith(isChecked: isChecked));
   }
 
   /// Removes [item] immediately from [shoppingItems]; see [removeItem].

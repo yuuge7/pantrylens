@@ -12,7 +12,11 @@ Open Food Facts, and keep inventory quantities in a local SQLite database.
 - Home overview of items to use soon, expired items, and recent additions
 - Inventory with search, filters, sorting, quantity controls, and editable
   names and best-before dates
-- Shopping list that collects used-up items and checks them off when rescanned
+- Shopping list that collects used-up items with their photos, has quantity
+  controls and editable names, and checks items off when they are rescanned
+- Full-screen product photos with pinch and double-tap zoom
+- Export of the inventory to a JSON file, and import that merges into or
+  replaces the current inventory
 - Settings for light, dark, or system theme, default best-before period,
   use-soon warnings, product lookup, continuous scanning, and haptics
 - Material 3 interface and a custom PantryLens launcher icon
@@ -28,6 +32,7 @@ incremented without a product lookup.
 - SQLite through `sqflite` and `path_provider`
 - `mobile_scanner` for barcode scanning
 - `http` for the Open Food Facts API
+- `file_picker` for the system dialogs that save and open inventory exports
 - `shared_preferences` for settings and `package_info_plus` for the app version
 
 ## Requirements
@@ -70,7 +75,8 @@ flutter test integration_test/pantrylens_smoke_test.dart -d <device-id>
 ```
 
 The integration checks cover inventory insertion and increments, tab
-navigation, quantity controls, switching to dark mode, scanner navigation, and
+navigation, quantity controls, switching to dark mode, scanner navigation,
+editing a shopping list entry, the inventory export format and import, and
 parsing an Open Food Facts response. The API parsing check uses
 a mock HTTP client so it remains deterministic and does not depend on emulator
 DNS or external service availability.
@@ -90,14 +96,16 @@ lib/
   api_service.dart       Open Food Facts client
   app_theme.dart         Light and dark themes and freshness colors
   database_helper.dart   SQLite database access
+  inventory_backup.dart  JSON format for inventory export and import
   main.dart              App entry point and providers
-  pantry_actions.dart    Shared flows: item editing, undo, manual entry
+  pantry_actions.dart    Shared flows: item editing, undo, manual entry,
+                         export and import
   pantry_item.dart       Inventory data model
   pantry_provider.dart   Inventory, shopping list, and scan handling
   settings_provider.dart Persisted app settings
   shopping_item.dart     Shopping list data model
   screens/               Tab shell, Home, Inventory, Shopping, Settings,
-                         item editor, and scanner
+                         item editors, photo viewer, and scanner
   widgets/               Shared widgets
 assets/
   icon.png               Launcher icon source image

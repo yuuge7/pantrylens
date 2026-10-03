@@ -5,6 +5,8 @@ import '../pantry_actions.dart';
 import '../pantry_provider.dart';
 import '../shopping_item.dart';
 import '../widgets/message_state.dart';
+import '../widgets/product_image.dart';
+import '../widgets/quantity_stepper.dart';
 
 class ShoppingTab extends StatefulWidget {
   const ShoppingTab({super.key});
@@ -48,28 +50,12 @@ class _ShoppingTabState extends State<ShoppingTab> {
     }
   }
 
-  void _remove(ShoppingItem item) {
-    final pantry = context.read<PantryProvider>();
-    pantry.removeShoppingItem(item).catchError((Object _) {});
-    showMessage(
-      context,
-      'Removed ${item.name}',
-      action: SnackBarAction(
-        label: 'Undo',
-        onPressed: () {
-          pantry.restoreShoppingItem(item).catchError((Object _) {});
-        },
-      ),
-    );
-  }
-
-  void _setChecked(ShoppingItem item, bool isChecked) {
-    context
-        .read<PantryProvider>()
-        .setShoppingItemChecked(item, isChecked)
-        .catchError((Object _) {
-          if (mounted) showMessage(context, 'List not updated. Try again.');
-        });
+  void _update(ShoppingItem item) {
+    context.read<PantryProvider>().updateShoppingItem(item).catchError((
+      Object _,
+    ) {
+      if (mounted) showMessage(context, 'List not updated. Try again.');
+    });
   }
 
   @override
@@ -118,12 +104,12 @@ class _ShoppingTabState extends State<ShoppingTab> {
                         'else with the field above.',
                   )
                   : ListView(
-                    padding: const EdgeInsets.only(bottom: 24),
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                     children: [
-                      for (final item in toBuy) _tile(item),
+                      for (final item in toBuy) _tile(item, pantry),
                       if (toBuy.isEmpty)
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                          padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
                           child: Text(
                             'Nothing left to buy.',
                             style: Theme.of(
@@ -138,7 +124,7 @@ class _ShoppingTabState extends State<ShoppingTab> {
                         ),
                       if (checked.isNotEmpty) ...[
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
+                          padding: const EdgeInsets.fromLTRB(4, 6, 0, 4),
                           child: Row(
                             children: [
                               Expanded(
@@ -165,7 +151,7 @@ class _ShoppingTabState extends State<ShoppingTab> {
                             ],
                           ),
                         ),
-                        for (final item in checked) _tile(item),
+                        for (final item in checked) _tile(item, pantry),
                       ],
                     ],
                   ),
@@ -174,34 +160,123 @@ class _ShoppingTabState extends State<ShoppingTab> {
     );
   }
 
-  Widget _tile(ShoppingItem item) {
+  Widget _tile(ShoppingItem item, PantryProvider pantry) {
     final theme = Theme.of(context);
-    return Dismissible(
-      key: ValueKey('shopping-${item.id}'),
-      direction: DismissDirection.endToStart,
-      onDismissed: (_) => _remove(item),
-      background: Container(
-        color: theme.colorScheme.errorContainer,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Icon(
-          Icons.delete_outline_rounded,
-          color: theme.colorScheme.onErrorContainer,
+    final colors = theme.colorScheme;
+    final inPantry = pantry.pantryItemFor(item);
+    final inStock = inPantry?.quantity ?? 0;
+
+    return Padding(
+      key: ValueKey('shopping-tile-${item.id}'),
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Dismissible(
+        key: ValueKey('shopping-${item.id}'),
+        direction: DismissDirection.endToStart,
+        onDismissed: (_) => removeShoppingItemWithUndo(context, item),
+        background: Container(
+          decoration: BoxDecoration(
+            color: colors.errorContainer,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Remove',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: colors.onErrorContainer,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.delete_outline_rounded,
+                color: colors.onErrorContainer,
+              ),
+            ],
+          ),
         ),
-      ),
-      child: CheckboxListTile(
-        controlAffinity: ListTileControlAffinity.leading,
-        value: item.isChecked,
-        onChanged: (value) => _setChecked(item, value ?? false),
-        title: Text(
-          item.name,
-          style:
-              item.isChecked
-                  ? TextStyle(
-                    decoration: TextDecoration.lineThrough,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  )
-                  : null,
+        child: Card(
+          child: InkWell(
+            onTap: () => openShoppingItemSheet(context, item),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, 10, 8, 10),
+              child: Row(
+                children: [
+                  Checkbox(
+                    visualDensity: VisualDensity.compact,
+                    value: item.isChecked,
+                    semanticLabel: item.name,
+                    onChanged:
+                        (value) =>
+                            _update(item.copyWith(isChecked: value ?? false)),
+                  ),
+                  Opacity(
+                    opacity: item.isChecked ? 0.5 : 1,
+                    child: ProductImage(
+                      imageUrl: item.imageUrl ?? inPantry?.imageUrl,
+                      size: 48,
+                      viewerTitle: item.name,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color:
+                                item.isChecked ? colors.onSurfaceVariant : null,
+                            decoration:
+                                item.isChecked
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          inStock == 0
+                              ? 'None in pantry'
+                              : '$inStock in pantry',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (item.isChecked)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: Text(
+                        '×${item.quantity}',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    )
+                  else
+                    QuantityStepper(
+                      compact: true,
+                      quantity: item.quantity,
+                      itemName: item.name,
+                      onChanged:
+                          (value) => _update(item.copyWith(quantity: value)),
+                    ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

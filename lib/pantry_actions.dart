@@ -1,11 +1,17 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'inventory_backup.dart';
 import 'pantry_item.dart';
 import 'pantry_provider.dart';
 import 'screens/item_sheet.dart';
+import 'screens/shopping_item_sheet.dart';
 import 'settings_provider.dart';
+import 'shopping_item.dart';
 
 /// UI flows shared by several tabs. Each one captures what it needs from
 /// [context] before its first await.
@@ -127,6 +133,145 @@ Future<void> removeItemWithUndo(
     );
   } catch (_) {
     showSnack(messenger, '${item.name} was not removed. Try again.');
+  }
+}
+
+Future<void> openShoppingItemSheet(
+  BuildContext context,
+  ShoppingItem item,
+) async {
+  final action = await showModalBottomSheet<ItemSheetAction>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    builder: (_) => ShoppingItemSheet(item: item),
+  );
+  if (action == ItemSheetAction.delete && context.mounted) {
+    removeShoppingItemWithUndo(context, item);
+  }
+}
+
+void removeShoppingItemWithUndo(BuildContext context, ShoppingItem item) {
+  final pantry = context.read<PantryProvider>();
+  pantry.removeShoppingItem(item).catchError((Object _) {});
+  showMessage(
+    context,
+    'Removed ${item.name}',
+    action: SnackBarAction(
+      label: 'Undo',
+      onPressed: () {
+        pantry.restoreShoppingItem(item).catchError((Object _) {});
+      },
+    ),
+  );
+}
+
+/// Saves the whole inventory to a file the user chooses.
+Future<void> exportInventory(BuildContext context) async {
+  final items = context.read<PantryProvider>().items;
+  final messenger = ScaffoldMessenger.of(context);
+  if (items.isEmpty) {
+    showSnack(messenger, 'Your pantry has nothing to export.');
+    return;
+  }
+
+  try {
+    final saved = await FilePicker.saveFile(
+      fileName: InventoryBackup.fileName(),
+      bytes: utf8.encode(InventoryBackup.encode(items)),
+      mimeType: 'application/json',
+    );
+    if (saved == null) return;
+    showSnack(
+      messenger,
+      items.length == 1 ? 'Exported 1 item' : 'Exported ${items.length} items',
+    );
+  } catch (_) {
+    showSnack(messenger, 'Inventory not exported. Try again.');
+  }
+}
+
+/// Reads an exported inventory file and adds its items to the pantry.
+Future<void> importInventory(BuildContext context) async {
+  final pantry = context.read<PantryProvider>();
+  final messenger = ScaffoldMessenger.of(context);
+
+  final List<PantryItem> items;
+  try {
+    final file = await FilePicker.pickFile();
+    if (file == null) return;
+    items = InventoryBackup.decode(utf8.decode(await file.readAsBytes()));
+  } on FormatException {
+    showSnack(messenger, 'That file is not a PantryLens inventory export.');
+    return;
+  } catch (_) {
+    showSnack(messenger, 'The file could not be read. Try again.');
+    return;
+  }
+  if (!context.mounted) return;
+
+  final replaceAll = await showDialog<bool>(
+    context: context,
+    builder:
+        (_) => _ImportDialog(
+          importCount: items.length,
+          pantryCount: pantry.items.length,
+        ),
+  );
+  if (replaceAll == null) return;
+
+  try {
+    await pantry.importItems(items, replaceAll: replaceAll);
+    showSnack(
+      messenger,
+      items.length == 1 ? 'Imported 1 item' : 'Imported ${items.length} items',
+    );
+  } catch (_) {
+    showSnack(messenger, 'Nothing was imported. Try again.');
+  }
+}
+
+/// Pops with true to replace the pantry, false to merge into it.
+class _ImportDialog extends StatelessWidget {
+  const _ImportDialog({required this.importCount, required this.pantryCount});
+
+  final int importCount;
+  final int pantryCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isEmpty = pantryCount == 0;
+
+    return AlertDialog(
+      title: Text(
+        importCount == 1 ? 'Import 1 item?' : 'Import $importCount items?',
+      ),
+      content: Text(
+        isEmpty
+            ? 'They will be added to your pantry.'
+            : 'Merge keeps your pantry and updates items it already has. '
+                'Replace deletes your current '
+                '${pantryCount == 1 ? 'item' : '$pantryCount items'} first.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        if (!isEmpty)
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: colors.error),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Replace'),
+          ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(isEmpty ? 'Import' : 'Merge'),
+        ),
+      ],
+    );
   }
 }
 

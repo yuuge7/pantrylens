@@ -11,6 +11,7 @@ class QuantityStepper extends StatelessWidget {
     required this.onChanged,
     this.onUseUp,
     this.itemName,
+    this.compact = false,
   });
 
   final int quantity;
@@ -20,12 +21,16 @@ class QuantityStepper extends StatelessWidget {
   /// Used in button tooltips so screen readers know which item is affected.
   final String? itemName;
 
+  /// Shrinks the buttons, for rows that hold other controls as well.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final canUseUp = quantity <= 1 && onUseUp != null;
     final suffix = itemName == null ? '' : ' of $itemName';
+    final density = compact ? VisualDensity.compact : null;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -36,6 +41,7 @@ class QuantityStepper extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
+            visualDensity: density,
             tooltip: canUseUp ? 'Mark$suffix as used up' : 'Remove one$suffix',
             onPressed:
                 canUseUp
@@ -59,6 +65,7 @@ class QuantityStepper extends StatelessWidget {
             ),
           ),
           IconButton(
+            visualDensity: density,
             tooltip: 'Add one$suffix',
             onPressed: () => onChanged(quantity + 1),
             icon: const Icon(Icons.add_rounded),

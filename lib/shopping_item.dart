@@ -5,20 +5,30 @@ class ShoppingItem {
 
   /// The barcode of the pantry item this entry came from, when known.
   final String? barcode;
+
+  /// The photo of the pantry item this entry came from, when known.
+  final String? imageUrl;
+
+  /// How many units to buy.
+  final int quantity;
   final bool isChecked;
 
   const ShoppingItem({
     this.id,
     required this.name,
     this.barcode,
+    this.imageUrl,
+    this.quantity = 1,
     this.isChecked = false,
   });
 
-  ShoppingItem copyWith({bool? isChecked}) {
+  ShoppingItem copyWith({String? name, int? quantity, bool? isChecked}) {
     return ShoppingItem(
       id: id,
-      name: name,
+      name: name ?? this.name,
       barcode: barcode,
+      imageUrl: imageUrl,
+      quantity: quantity ?? this.quantity,
       isChecked: isChecked ?? this.isChecked,
     );
   }
@@ -27,6 +37,8 @@ class ShoppingItem {
     final map = <String, Object?>{
       'name': name,
       'barcode': barcode,
+      'imageUrl': imageUrl,
+      'quantity': quantity,
       'isChecked': isChecked ? 1 : 0,
     };
     if (id != null) {
@@ -40,6 +52,8 @@ class ShoppingItem {
       id: map['id'] as int?,
       name: map['name'] as String,
       barcode: map['barcode'] as String?,
+      imageUrl: map['imageUrl'] as String?,
+      quantity: map['quantity'] as int? ?? 1,
       isChecked: (map['isChecked'] as int? ?? 0) != 0,
     );
   }

@@ -68,7 +68,11 @@ class _HomeShellState extends State<HomeShell> {
       ),
       AppTab.inventory => AppBar(
         title: const Text('Inventory'),
-        actions: const [InventorySortButton(), SizedBox(width: 8)],
+        actions: const [
+          InventorySortButton(),
+          InventoryMenuButton(),
+          SizedBox(width: 8),
+        ],
       ),
       AppTab.shopping => AppBar(title: const Text('Shopping list')),
       AppTab.settings => AppBar(title: const Text('Settings')),

@@ -5,8 +5,8 @@ import '../pantry_item.dart';
 import '../pantry_provider.dart';
 import '../settings_provider.dart';
 import '../widgets/freshness_label.dart';
-import '../widgets/product_image.dart';
 import '../widgets/quantity_stepper.dart';
+import '../widgets/sheet_parts.dart';
 
 enum ItemSheetAction { delete }
 
@@ -102,6 +102,7 @@ class _ItemSheetState extends State<ItemSheet> {
       await context.read<PantryProvider>().addShoppingItem(
         _name.text.trim().isEmpty ? _item.name : _name.text.trim(),
         barcode: _item.barcode,
+        imageUrl: _item.imageUrl,
       );
     } catch (_) {
       if (mounted) _error = 'Shopping list not updated. Try again.';
@@ -133,32 +134,10 @@ class _ItemSheetState extends State<ItemSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              children: [
-                ProductImage(imageUrl: _item.imageUrl, size: 72),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Barcode',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      SelectableText(
-                        _item.barcode,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            ProductHeader(
+              name: _item.name,
+              imageUrl: _item.imageUrl,
+              barcode: _item.barcode,
             ),
             const SizedBox(height: 20),
             Text('Name', style: theme.textTheme.titleSmall),
@@ -175,7 +154,7 @@ class _ItemSheetState extends State<ItemSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            _FieldRow(
+            FieldRow(
               label: 'Quantity',
               child: QuantityStepper(
                 quantity: _quantity,
@@ -186,7 +165,7 @@ class _ItemSheetState extends State<ItemSheet> {
             InkWell(
               onTap: _pickDate,
               borderRadius: BorderRadius.circular(12),
-              child: _FieldRow(
+              child: FieldRow(
                 label: 'Best before',
                 detail: FreshnessLabel(
                   item: draft,
@@ -254,37 +233,6 @@ class _ItemSheetState extends State<ItemSheet> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _FieldRow extends StatelessWidget {
-  const _FieldRow({required this.label, required this.child, this.detail});
-
-  final String label;
-  final Widget child;
-  final Widget? detail;
-
-  @override
-  Widget build(BuildContext context) {
-    final detail = this.detail;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 64),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label, style: Theme.of(context).textTheme.titleSmall),
-                if (detail != null) ...[const SizedBox(height: 4), detail],
-              ],
-            ),
-          ),
-          child,
-        ],
       ),
     );
   }

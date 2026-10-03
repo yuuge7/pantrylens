@@ -197,6 +197,23 @@ class _SettingsTabState extends State<SettingsTab> {
         ),
         const _SectionHeader('Data'),
         ListTile(
+          leading: const Icon(Icons.upload_file_outlined),
+          title: const Text('Export inventory'),
+          subtitle: Text(
+            itemCount == 1
+                ? 'Save 1 item to a file'
+                : 'Save $itemCount items to a file',
+          ),
+          enabled: itemCount > 0,
+          onTap: () => exportInventory(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.download_outlined),
+          title: const Text('Import inventory'),
+          subtitle: const Text('Add items from an exported file'),
+          onTap: () => importInventory(context),
+        ),
+        ListTile(
           leading: const Icon(Icons.remove_shopping_cart_outlined),
           title: const Text('Clear shopping list'),
           subtitle: Text(listCount == 1 ? '1 entry' : '$listCount entries'),

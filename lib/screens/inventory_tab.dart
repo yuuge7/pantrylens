@@ -270,7 +270,11 @@ class _InventoryTile extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
             child: Row(
               children: [
-                ProductImage(imageUrl: item.imageUrl, size: 60),
+                ProductImage(
+                  imageUrl: item.imageUrl,
+                  size: 60,
+                  viewerTitle: item.name,
+                ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -333,6 +337,40 @@ class InventorySortButton extends StatelessWidget {
                 checked: sort == settings.inventorySort,
                 child: Text(_labels[sort]!),
               ),
+          ],
+    );
+  }
+}
+
+enum _InventoryMenuAction { export, import }
+
+/// App bar menu for saving the inventory to a file and reading it back.
+class InventoryMenuButton extends StatelessWidget {
+  const InventoryMenuButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasItems = context.select<PantryProvider, bool>(
+      (pantry) => pantry.items.isNotEmpty,
+    );
+    return PopupMenuButton<_InventoryMenuAction>(
+      tooltip: 'More options',
+      onSelected:
+          (action) => switch (action) {
+            _InventoryMenuAction.export => exportInventory(context),
+            _InventoryMenuAction.import => importInventory(context),
+          },
+      itemBuilder:
+          (context) => [
+            PopupMenuItem(
+              value: _InventoryMenuAction.export,
+              enabled: hasItems,
+              child: const Text('Export inventory'),
+            ),
+            const PopupMenuItem(
+              value: _InventoryMenuAction.import,
+              child: Text('Import inventory'),
+            ),
           ],
     );
   }
