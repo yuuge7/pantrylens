@@ -13,47 +13,35 @@ import 'features/onboarding/onboarding_screen.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 Future<void> main() async {
-  const traceStartup = bool.fromEnvironment('PROFILE_STARTUP');
-  final startup = Stopwatch()..start();
-  void markStartup(String step) {
-    if (traceStartup)
-      debugPrint(
-        'PantryLens startup: $step at ${startup.elapsedMilliseconds} ms',
+  WidgetsFlutterBinding.ensureInitialized();
+  void installLocalHandlers() {
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      unawaited(
+        ErrorReporter.capture(
+          details.exception,
+          details.stack ?? StackTrace.current,
+        ),
       );
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      unawaited(ErrorReporter.capture(error, stack));
+      return true;
+    };
   }
 
-  markStartup('Dart entry');
-  WidgetsFlutterBinding.ensureInitialized();
-  // Load preferences before the first frame so the chosen theme never flashes.
-  final settings = await SettingsProvider.load();
-  markStartup('Preferences ready');
-  FlutterError.onError = (details) {
-    FlutterError.presentError(details);
-    unawaited(
-      ErrorReporter.capture(
-        details.exception,
-        details.stack ?? StackTrace.current,
-      ),
-    );
-  };
-  PlatformDispatcher.instance.onError = (error, stack) {
-    unawaited(ErrorReporter.capture(error, stack));
-    return true;
-  };
-  final pantry = PantryProvider()..actor = settings.actorName;
-  markStartup('Provider started');
-  final sync = PlatformSync(pantry, settings);
-  var homeRestored = false;
-  pantry.addListener(() {
-    if (!pantry.isLoading && !homeRestored) {
-      homeRestored = true;
-      pantry.selectHome(settings.homeId);
-    }
-  });
-  void launch() {
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => markStartup('First frame'),
-    );
+  Future<void> launch() async {
+    // Load preferences before the first frame so the chosen theme never flashes.
+    final settings = await SettingsProvider.load();
+    final pantry = PantryProvider()..actor = settings.actorName;
+    final sync = PlatformSync(pantry, settings);
+    var homeRestored = false;
+    pantry.addListener(() {
+      if (!pantry.isLoading && !homeRestored) {
+        homeRestored = true;
+        pantry.selectHome(settings.homeId);
+      }
+    });
     runApp(
       _AppLifetime(
         sync: sync,
@@ -69,12 +57,10 @@ Future<void> main() async {
   }
 
   if (ErrorReporter.dsn.isNotEmpty) {
-    await SentryFlutter.init((o) {
-      o.dsn = ErrorReporter.dsn;
-      o.sendDefaultPii = false;
-    }, appRunner: launch);
+    await SentryFlutter.init(ErrorReporter.configure, appRunner: launch);
   } else {
-    launch();
+    installLocalHandlers();
+    await launch();
   }
 }
 

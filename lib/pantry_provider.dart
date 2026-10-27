@@ -39,6 +39,7 @@ class PantryProvider extends ChangeNotifier {
   List<HouseholdRecord> _records = [];
   List<Activity> _activity = [];
   bool _loading = true;
+  bool _hasLoaded = false;
   bool _disposed = false;
   String? _error;
   String? _homeId = 'main';
@@ -47,8 +48,6 @@ class PantryProvider extends ChangeNotifier {
   Future<void> _writes = Future.value();
   int revision = 0;
 
-  /// Completes after edits already queued by the UI have reached storage.
-  Future<void> get pendingChanges => _writes;
   final Set<String> _scanning = {};
   String? get selectedHomeId => _homeId;
   String get selectedHomeName =>
@@ -56,6 +55,7 @@ class PantryProvider extends ChangeNotifier {
           ? 'All homes'
           : homes.where((h) => h.id == _homeId).firstOrNull?.name ?? 'My home';
   List<PantryItem> get allItems => List.unmodifiable(_items);
+  List<ShoppingItem> get allShoppingItems => List.unmodifiable(_shopping);
   List<PantryItem> get items => _items
       .where((i) => _homeId == null || i.homeId == _homeId)
       .toList(growable: false);
@@ -69,6 +69,7 @@ class PantryProvider extends ChangeNotifier {
       .where((r) => _homeId == null || r.homeId == _homeId)
       .toList(growable: false);
   bool get isLoading => _loading;
+  bool get hasLoaded => _hasLoaded;
   String? get errorMessage => _error;
   num get totalUnits => items
       .where((i) => i.unit == 'pieces')
@@ -109,7 +110,7 @@ class PantryProvider extends ChangeNotifier {
       await _reload();
     } catch (e, s) {
       _error = 'Your pantry could not be loaded. Check storage and try again.';
-      await ErrorReporter.capture(e, s);
+      unawaited(ErrorReporter.capture(e, s));
     } finally {
       _loading = false;
       _notify();
@@ -123,6 +124,7 @@ class PantryProvider extends ChangeNotifier {
     homes = snapshot.homes;
     _records = snapshot.records;
     _activity = snapshot.activity;
+    _hasLoaded = true;
     revision++;
   }
 
@@ -137,7 +139,7 @@ class PantryProvider extends ChangeNotifier {
         return value;
       } catch (e, s) {
         _error = 'Changes could not be saved. Check storage and try again.';
-        await ErrorReporter.capture(e, s);
+        unawaited(ErrorReporter.capture(e, s));
         rethrow;
       } finally {
         _notify();
@@ -147,7 +149,12 @@ class PantryProvider extends ChangeNotifier {
     return result;
   }
 
-  Activity _entry(PantryItem i, String action, num quantity) => Activity(
+  Activity _entry(
+    PantryItem i,
+    String action,
+    num quantity, {
+    String? wasteReason,
+  }) => Activity(
     homeId: i.homeId,
     actor: actor,
     action: action,
@@ -156,6 +163,10 @@ class PantryProvider extends ChangeNotifier {
     unit: i.unit,
     value: quantity * i.price,
     at: DateTime.now(),
+    wasteReason:
+        action == 'wasted'
+            ? wasteReason ?? (i.daysUntilExpiry() < 0 ? 'expired' : 'other')
+            : null,
   );
 
   Future<ScanOutcome?> onBarcodeScanned(
@@ -341,6 +352,7 @@ class PantryProvider extends ChangeNotifier {
     required String homeId,
     String unit = 'pieces',
     bool wasted = false,
+    String? wasteReason,
   }) => _write(() async {
     if (!amount.isFinite || amount <= 0)
       throw ArgumentError('Enter a positive amount');
@@ -375,7 +387,12 @@ class PantryProvider extends ChangeNotifier {
           );
         }
         await data.log(
-          _entry(batch, wasted ? 'wasted' : 'used', used),
+          _entry(
+            batch,
+            wasted ? 'wasted' : 'used',
+            used,
+            wasteReason: wasteReason,
+          ),
           txn: txn,
         );
         left -= used;
@@ -383,11 +400,42 @@ class PantryProvider extends ChangeNotifier {
     });
   });
 
+  /// Waste is recorded against the physical batch the person discarded.
+  Future<void> discardBatch(PantryItem item, num amount, String reason) =>
+      _write(() async {
+        if (!Activity.wasteReasons.contains(reason))
+          throw ArgumentError('Choose a waste reason');
+        final current = _items.firstWhere((i) => i.id == item.id);
+        if (!amount.isFinite || amount <= 0 || amount > current.quantity)
+          throw ArgumentError('Enter an amount within this batch');
+        await (await data.database).transaction((txn) async {
+          if (amount == current.quantity) {
+            await txn.delete(
+              'pantry_items',
+              where: 'id=?',
+              whereArgs: [current.id],
+            );
+          } else {
+            await txn.update(
+              'pantry_items',
+              {'quantity': current.quantity - amount},
+              where: 'id=?',
+              whereArgs: [current.id],
+            );
+          }
+          await data.log(
+            _entry(current, 'wasted', amount, wasteReason: reason),
+            txn: txn,
+          );
+        });
+      });
+
   Future<RemovedItem> removeItem(
     PantryItem item, {
     bool addToShoppingList = false,
     bool wasted = false,
     bool usedUp = false,
+    String? wasteReason,
   }) => _write(() async {
     if (item.id == null) throw ArgumentError('Missing batch id');
     final current = _items.firstWhere((i) => i.id == item.id);
@@ -426,6 +474,7 @@ class PantryProvider extends ChangeNotifier {
               ? 'used'
               : 'removed',
           current.quantity,
+          wasteReason: wasteReason,
         ),
         txn: txn,
       );
@@ -473,13 +522,18 @@ class PantryProvider extends ChangeNotifier {
     });
   });
   Future<void> clearInventory() => _write(() async {
-    await data.deleteAllItems(homeId: _homeId);
+    await data.deleteAllItems(homeId: _homeId, actor: actor);
   });
   Future<void> importItems(
     List<PantryItem> items, {
     required bool replaceAll,
   }) => _write(() async {
-    await data.importItems(items, replaceAll: replaceAll);
+    await data.importItems(
+      items,
+      replaceAll: replaceAll,
+      replaceHomeId: _homeId,
+      actor: actor,
+    );
     for (final item in items) {
       await data.saveStockRule(item);
     }

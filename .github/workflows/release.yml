@@ -134,10 +134,14 @@ jobs:
           PY
 
       - name: Build signed APK
-        run: flutter build apk --release --no-pub
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: flutter build apk --release --no-pub --dart-define="SENTRY_DSN=$SENTRY_DSN"
 
       - name: Build signed Android App Bundle
-        run: flutter build appbundle --release --no-pub
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: flutter build appbundle --release --no-pub --dart-define="SENTRY_DSN=$SENTRY_DSN"
 
       - name: Commit version and push release tag
         env:

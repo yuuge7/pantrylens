@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:io';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../widgets/stored_photo.dart';
+import '../services/photo_cache.dart';
 
 /// A product photo on its own screen, with pinch and double-tap zoom.
 class PhotoViewer extends StatefulWidget {
@@ -40,6 +40,7 @@ class _PhotoViewerState extends State<PhotoViewer> {
 
   final _transform = TransformationController();
   Offset _doubleTapPosition = Offset.zero;
+  int _retry = 0;
 
   @override
   void dispose() {
@@ -61,43 +62,48 @@ class _PhotoViewerState extends State<PhotoViewer> {
   }
 
   Widget _photo(String url, ImageErrorWidgetBuilder errorBuilder) {
-    if (!url.startsWith('http'))
-      return Image.file(
-        File(url),
-        fit: BoxFit.contain,
-        semanticLabel: 'Photo of ${widget.title}',
-        errorBuilder: errorBuilder,
-      );
-    return CachedNetworkImage(
-      imageUrl: url,
+    return StoredPhoto(
+      key: ValueKey('$url|$_retry'),
+      url: url,
       fit: BoxFit.contain,
-      placeholder:
-          (context, url) => const Center(
-            child: CircularProgressIndicator(color: Colors.white),
-          ),
-      errorWidget: (context, url, error) => errorBuilder(context, error, null),
+      label: 'Photo of ${widget.title}',
+      placeholder: const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      ),
+      errorBuilder: errorBuilder,
     );
   }
 
   Widget _unavailable(BuildContext context, Object _, StackTrace? _) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.image_not_supported_outlined,
-            size: 48,
-            color: Colors.white70,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Photo unavailable. Check your connection.',
-            textAlign: TextAlign.center,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-          ),
-        ],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.image_not_supported_outlined,
+              size: 48,
+              color: Colors.white70,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Photo unavailable. Check your connection or choose a new photo in the batch editor.',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () async {
+                await PhotoCache.instance.sync([widget.imageUrl], force: true);
+                if (mounted) setState(() => _retry++);
+              },
+              child: const Text('Retry photo'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -114,6 +120,24 @@ class _PhotoViewerState extends State<PhotoViewer> {
         foregroundColor: Colors.white,
         systemOverlayStyle: SystemUiOverlayStyle.light,
         title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        actions: [
+          IconButton(
+            tooltip: 'Zoom in',
+            onPressed: () {
+              _doubleTapPosition = MediaQuery.sizeOf(
+                context,
+              ).center(Offset.zero);
+              _transform.value = Matrix4.identity();
+              _toggleZoom();
+            },
+            icon: const Icon(Icons.zoom_in),
+          ),
+          IconButton(
+            tooltip: 'Reset zoom',
+            onPressed: () => _transform.value = Matrix4.identity(),
+            icon: const Icon(Icons.zoom_out_map),
+          ),
+        ],
       ),
       body: GestureDetector(
         onDoubleTapDown:

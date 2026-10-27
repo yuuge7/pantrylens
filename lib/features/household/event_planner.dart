@@ -17,11 +17,25 @@ List<Map<String, dynamic>> missingIngredients(
 ) {
   final required = <String, Map<String, dynamic>>{};
   for (final r in requirements) {
-    final key = '${(r['name'] as String).trim().toLowerCase()}|${r['unit']}';
+    final unit = r['unit'] as String;
+    final family = switch (unit) {
+      'g' || 'kg' => 'mass',
+      'ml' || 'l' => 'volume',
+      _ => unit,
+    };
+    final key = '${(r['name'] as String).trim().toLowerCase()}|$family';
     final old = required[key];
     required[key] = {
-      ...r,
-      'quantity': (r['quantity'] as num) + (old?['quantity'] as num? ?? 0),
+      ...old ?? r,
+      'quantity':
+          old == null
+              ? r['quantity']
+              : (old['quantity'] as num) +
+                  convertAmount(
+                    r['quantity'] as num,
+                    unit,
+                    old['unit'] as String,
+                  )!,
     };
   }
   return [
@@ -31,7 +45,7 @@ List<Map<String, dynamic>> missingIngredients(
             .where(
               (i) =>
                   i.homeId == homeId &&
-                  i.name.toLowerCase() ==
+                  i.name.trim().toLowerCase() ==
                       (r['name'] as String).trim().toLowerCase() &&
                   i.daysUntilExpiry() >= 0,
             )
@@ -42,7 +56,7 @@ List<Map<String, dynamic>> missingIngredients(
                   (convertAmount(i.quantity, i.unit, r['unit'] as String) ?? 0),
             );
         final deficit = (r['quantity'] as num) - available;
-        return deficit > 0
+        return deficit > 0.000000001
             ? [
               {...r, 'quantity': deficit},
             ]

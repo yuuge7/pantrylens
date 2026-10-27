@@ -1,6 +1,4 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../pantry_actions.dart';
 import '../../settings_provider.dart';
@@ -8,6 +6,8 @@ import '../../services/error_reporter.dart';
 import '../../services/reminder_service.dart';
 import '../insights/insights_screen.dart';
 import 'household_screen.dart';
+import 'offline_photos_screen.dart';
+import 'diagnostics_screen.dart';
 
 class HouseholdSettings extends StatelessWidget {
   const HouseholdSettings({super.key});
@@ -107,6 +107,16 @@ class HouseholdSettings extends StatelessWidget {
               ),
         ),
         const Divider(),
+        ListTile(
+          leading: const Icon(Icons.offline_pin_outlined),
+          title: const Text('Offline photos'),
+          subtitle: const Text('Check saved photos and retry downloads'),
+          onTap:
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const OfflinePhotosScreen()),
+              ),
+        ),
         SwitchListTile(
           secondary: const Icon(Icons.notifications_outlined),
           title: const Text('Expiry reminders'),
@@ -187,7 +197,7 @@ class HouseholdSettings extends StatelessWidget {
                     (c) => AlertDialog(
                       title: const Text('Add a PantryLens widget'),
                       content: const Text(
-                        'On Android, touch and hold your home screen, choose Widgets and find PantryLens. On iPhone or iPad, edit your home screen, choose Add Widget and find PantryLens. Choose Use soon or Shopping.',
+                        'Touch and hold your home screen, choose Widgets and find PantryLens. Choose Use soon or Shopping, then drag it onto your home screen. Touch and hold a placed widget to resize it.',
                       ),
                       actions: [
                         TextButton(
@@ -211,39 +221,11 @@ class HouseholdSettings extends StatelessWidget {
                 ? 'Errors are logged on this device'
                 : 'Local diagnostics and Sentry reporting enabled',
           ),
-          onTap: () async {
-            String log;
-            try {
-              final dir = await getApplicationSupportDirectory();
-              final file = File('${dir.path}/diagnostics.log');
-              log =
-                  await file.exists()
-                      ? await file.readAsString()
-                      : 'No errors recorded.';
-            } catch (_) {
-              log = 'Diagnostic log is unavailable.';
-            }
-            if (context.mounted)
-              showDialog(
-                context: context,
-                builder:
-                    (c) => AlertDialog(
-                      title: const Text('Diagnostics'),
-                      content: SizedBox(
-                        width: 600,
-                        child: SingleChildScrollView(
-                          child: SelectableText(log),
-                        ),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(c),
-                          child: const Text('Close'),
-                        ),
-                      ],
-                    ),
-              );
-          },
+          onTap:
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DiagnosticsScreen()),
+              ),
         ),
       ],
     );

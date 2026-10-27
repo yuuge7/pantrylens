@@ -9,6 +9,7 @@ import '../../pantry_item.dart';
 import '../../settings_provider.dart';
 import 'household_models.dart';
 import 'event_planner.dart';
+import '../../widgets/pantry_data_state.dart';
 
 class HouseholdScreen extends StatelessWidget {
   const HouseholdScreen({super.key});
@@ -29,14 +30,16 @@ class HouseholdScreen extends StatelessWidget {
           ],
         ),
       ),
-      body: const TabBarView(
-        children: [
-          _Homes(),
-          _Records(kind: 'task'),
-          _Records(kind: 'profile'),
-          _Records(kind: 'event'),
-          _ActivityList(),
-        ],
+      body: const PantryDataState(
+        child: TabBarView(
+          children: [
+            _Homes(),
+            _Records(kind: 'task'),
+            _Records(kind: 'profile'),
+            _Records(kind: 'event'),
+            _ActivityList(),
+          ],
+        ),
       ),
     ),
   );
@@ -315,6 +318,7 @@ class _Records extends StatelessWidget {
                           File(r.data['photo'] as String),
                           height: 160,
                           fit: BoxFit.contain,
+                          semanticLabel: 'Task photo for ${r.data['name']}',
                           errorBuilder:
                               (_, __, ___) => const Text(
                                 'Photo unavailable. Edit the task to attach it again.',
@@ -574,6 +578,7 @@ class _RecordEditorState extends State<_RecordEditor> {
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
                 initialValue: _home,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Home'),
                 items:
                     pantry.homes
@@ -732,7 +737,7 @@ class _ActivityList extends StatelessWidget {
           ),
           title: Text('${a.actor} ${a.action} ${a.name}'),
           subtitle: Text(
-            '${formatAmount(a.quantity)} ${a.unit} · ${a.at.toLocal().toString().substring(0, 16)}',
+            '${formatAmount(a.quantity)} ${a.unit}${a.wasteReason == null ? '' : ' · ${a.wasteReason}'} · ${a.at.toLocal().toString().substring(0, 16)}',
           ),
         );
       },

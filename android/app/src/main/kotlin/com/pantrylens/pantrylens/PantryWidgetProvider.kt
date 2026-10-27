@@ -16,6 +16,7 @@ open class PantryWidgetProvider : HomeWidgetProvider() {
             views.setTextViewText(R.id.widget_title, if (shopping) "Shopping list" else "Use soon")
             views.setTextViewText(R.id.widget_home, data.getString("home", "My home"))
             val content = data.getString(if (shopping) "shopping" else "useSoon", "")
+            views.setContentDescription(R.id.widget_root, "${if (shopping) "Shopping list" else "Use soon"}. ${data.getString("home", "My home")}. ${content.orEmpty()}. Open PantryLens.")
             views.setTextViewText(R.id.widget_content, if (content.isNullOrBlank()) {
                 if (shopping) "Your list is clear. Open PantryLens to add items." else "Nothing to use soon. Open PantryLens to review your pantry."
             } else content)

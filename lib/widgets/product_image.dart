@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'stored_photo.dart';
 
 import '../screens/photo_viewer.dart';
 
@@ -43,20 +42,13 @@ class ProductImage extends StatelessWidget {
         child:
             url == null
                 ? placeholder
-                : !url.startsWith('http')
-                ? Image.file(
-                  File(url),
+                : StoredPhoto(
+                  url: url,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => placeholder,
-                )
-                : CachedNetworkImage(
-                  imageUrl: url,
-                  fit: BoxFit.cover,
-                  memCacheWidth:
+                  cacheWidth:
                       (size * MediaQuery.devicePixelRatioOf(context)).round(),
-                  // Show the placeholder until the first frame decodes.
-                  placeholder: (_, __) => placeholder,
-                  errorWidget: (_, _, _) => placeholder,
+                  placeholder: placeholder,
+                  errorBuilder: (_, _, _) => placeholder,
                 ),
       ),
     );
@@ -65,7 +57,10 @@ class ProductImage extends StatelessWidget {
     return Semantics(
       button: true,
       label: 'View photo of $viewerTitle',
-      child: GestureDetector(
+      onTap: () => PhotoViewer.open(context, imageUrl: url, title: viewerTitle),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(size * 0.22),
+        excludeFromSemantics: true,
         onTap:
             () => PhotoViewer.open(context, imageUrl: url, title: viewerTitle),
         child:

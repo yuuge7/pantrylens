@@ -62,6 +62,10 @@ class Activity {
   final String unit;
   final num value;
   final DateTime at;
+
+  /// Null on pre-v5 history, whose cause cannot be reconstructed reliably.
+  final String? wasteReason;
+  static const wasteReasons = ['expired', 'spoiled', 'other'];
   const Activity({
     this.id,
     required this.homeId,
@@ -72,6 +76,7 @@ class Activity {
     required this.unit,
     this.value = 0,
     required this.at,
+    this.wasteReason,
   });
   Map<String, Object?> toMap() => {
     if (id != null) 'id': id,
@@ -83,6 +88,7 @@ class Activity {
     'unit': unit,
     'value': value,
     'at': at.toIso8601String(),
+    'wasteReason': wasteReason,
   };
   factory Activity.fromMap(Map<String, Object?> m) => Activity(
     id: m['id'] as int?,
@@ -94,5 +100,6 @@ class Activity {
     unit: m['unit'] as String,
     value: m['value'] as num,
     at: DateTime.parse(m['at'] as String),
+    wasteReason: m['wasteReason'] as String?,
   );
 }

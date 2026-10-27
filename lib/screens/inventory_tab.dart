@@ -80,53 +80,71 @@ class InventoryTile extends StatelessWidget {
           onTap: onOpen ?? () => openItemSheet(context, item),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-            child: Row(
-              children: [
-                ProductImage(
-                  imageUrl: item.imageUrl,
-                  size: 60,
-                  viewerTitle: item.name,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      FreshnessLabel(item: item, useSoonDays: useSoonDays),
-                      Text(
-                        '${item.location} · ${item.amountLabel}',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      if (context
-                          .read<PantryProvider>()
-                          .allergyWarnings(item)
-                          .isNotEmpty)
-                        Text(
-                          'Allergy warning',
-                          style: TextStyle(color: colors.error),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                QuantityStepper(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked =
+                    constraints.maxWidth < 380 ||
+                    MediaQuery.textScalerOf(context).scale(14) > 20;
+                final counter = QuantityStepper(
                   quantity: item.quantity,
                   compact: true,
                   itemName: item.name,
                   onChanged: (value) => changeQuantity(context, item, value),
                   onUseUp:
                       () => removeItemWithUndo(context, item, usedUp: true),
-                ),
-              ],
+                );
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        ProductImage(
+                          imageUrl: item.imageUrl,
+                          size: 60,
+                          viewerTitle: item.name,
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              FreshnessLabel(
+                                item: item,
+                                useSoonDays: useSoonDays,
+                              ),
+                              Text(
+                                '${item.location} · ${item.amountLabel}',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                              if (context
+                                  .read<PantryProvider>()
+                                  .allergyWarnings(item)
+                                  .isNotEmpty)
+                                Text(
+                                  'Allergy warning',
+                                  style: TextStyle(color: colors.error),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (!stacked) counter,
+                      ],
+                    ),
+                    if (stacked)
+                      Align(alignment: Alignment.centerRight, child: counter),
+                  ],
+                );
+              },
             ),
           ),
         ),

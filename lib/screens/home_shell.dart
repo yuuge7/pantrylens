@@ -14,6 +14,7 @@ import '../features/household/household_screen.dart';
 import '../features/insights/insights_screen.dart';
 import 'item_sheet.dart';
 import '../settings_provider.dart';
+import '../widgets/pantry_data_state.dart';
 
 enum AppTab { home, inventory, shopping, settings }
 
@@ -57,6 +58,14 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
+    final toolbarScan =
+        MediaQuery.sizeOf(context).width >= 840 &&
+        context.watch<PantryProvider>().items.isNotEmpty;
+    Widget scanAction() => IconButton(
+      tooltip: 'Scan item',
+      onPressed: _openScanner,
+      icon: const Icon(Icons.qr_code_scanner_rounded),
+    );
     return switch (_tab) {
       AppTab.home => AppBar(
         toolbarHeight: 80,
@@ -77,6 +86,7 @@ class _HomeShellState extends State<HomeShell> {
           ],
         ),
         actions: [
+          if (toolbarScan) scanAction(),
           const HomeSelector(),
           IconButton(
             tooltip: 'Usage & waste',
@@ -94,6 +104,7 @@ class _HomeShellState extends State<HomeShell> {
       AppTab.inventory => AppBar(
         title: const Text('Inventory'),
         actions: [
+          if (toolbarScan) scanAction(),
           const HomeSelector(),
           _addMenu(context),
           const InventorySortButton(),
@@ -144,22 +155,26 @@ class _HomeShellState extends State<HomeShell> {
     final tabs = IndexedStack(
       index: _tab.index,
       children: [
-        HomeTab(
-          onOpenInventory: _openInventory,
-          onOpenShopping: () => _selectTab(AppTab.shopping),
-          onScan: _openScanner,
+        PantryDataState(
+          child: HomeTab(
+            onOpenInventory: _openInventory,
+            onOpenShopping: () => _selectTab(AppTab.shopping),
+            onScan: _openScanner,
+          ),
         ),
         if (_visited.contains(AppTab.inventory))
-          InventoryTab(
-            filter: _inventoryFilter,
-            onFilterChanged:
-                (filter) => setState(() => _inventoryFilter = filter),
-            onScan: _openScanner,
+          PantryDataState(
+            child: InventoryTab(
+              filter: _inventoryFilter,
+              onFilterChanged:
+                  (filter) => setState(() => _inventoryFilter = filter),
+              onScan: _openScanner,
+            ),
           )
         else
           const SizedBox.shrink(),
         if (_visited.contains(AppTab.shopping))
-          const ShoppingTab()
+          const PantryDataState(child: ShoppingTab())
         else
           const SizedBox.shrink(),
         if (_visited.contains(AppTab.settings))
@@ -212,7 +227,7 @@ class _HomeShellState extends State<HomeShell> {
                   : tabs,
         ),
         floatingActionButton:
-            showScanButton
+            showScanButton && !wide
                 ? FloatingActionButton.extended(
                   onPressed: _openScanner,
                   icon: const Icon(Icons.qr_code_scanner_rounded),

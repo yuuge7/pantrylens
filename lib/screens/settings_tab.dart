@@ -106,33 +106,75 @@ class _SettingsTabState extends State<SettingsTab> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 32),
       children: [
+        if (settings.persistenceError != null)
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  liveRegion: true,
+                  child: Text(settings.persistenceError!),
+                ),
+                TextButton.icon(
+                  onPressed: settings.retryPersistence,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry saving preferences'),
+                ),
+              ],
+            ),
+          ),
         const _SectionHeader('Appearance'),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-          child: SegmentedButton<ThemeMode>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(
-                value: ThemeMode.system,
-                icon: Icon(Icons.brightness_auto_outlined),
-                label: Text('System'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.light,
-                icon: Icon(Icons.light_mode_outlined),
-                label: Text('Light'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.dark,
-                icon: Icon(Icons.dark_mode_outlined),
-                label: Text('Dark'),
-              ),
-            ],
-            selected: {settings.themeMode},
-            onSelectionChanged: (selection) {
-              settings.themeMode = selection.first;
-            },
-          ),
+          child:
+              MediaQuery.textScalerOf(context).scale(14) > 20
+                  ? DropdownButtonFormField<ThemeMode>(
+                    initialValue: settings.themeMode,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Appearance'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: ThemeMode.system,
+                        child: Text('System'),
+                      ),
+                      DropdownMenuItem(
+                        value: ThemeMode.light,
+                        child: Text('Light'),
+                      ),
+                      DropdownMenuItem(
+                        value: ThemeMode.dark,
+                        child: Text('Dark'),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) settings.themeMode = v;
+                    },
+                  )
+                  : SegmentedButton<ThemeMode>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        icon: Icon(Icons.brightness_auto_outlined),
+                        label: Text('System'),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        icon: Icon(Icons.light_mode_outlined),
+                        label: Text('Light'),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        icon: Icon(Icons.dark_mode_outlined),
+                        label: Text('Dark'),
+                      ),
+                    ],
+                    selected: {settings.themeMode},
+                    onSelectionChanged: (selection) {
+                      settings.themeMode = selection.first;
+                    },
+                  ),
         ),
         const _SectionHeader('Household & daily use'),
         const HouseholdSettings(),
@@ -278,7 +320,7 @@ class _SettingsTabState extends State<SettingsTab> {
           leading: Icon(Icons.lock_outline_rounded),
           title: const Text('Data & privacy'),
           subtitle: Text(
-            'Inventory and household data stay on this device. Product lookup sends barcodes to Open Food Facts and Open Products Facts; photos are downloaded when displayed. '
+            'Inventory and household data stay on this device. Product lookup sends barcodes to Open Food Facts and Open Products Facts; product photos are downloaded and saved for offline use. '
             '${ErrorReporter.dsn.isEmpty ? 'Crash diagnostics stay on this device.' : 'Crash reports are sent to the configured Sentry project.'}',
           ),
         ),

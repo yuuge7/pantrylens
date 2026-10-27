@@ -4,6 +4,8 @@ import '../../pantry_provider.dart';
 import '../../pantry_item.dart';
 import '../../settings_provider.dart';
 import 'insights_data.dart';
+import '../../widgets/pantry_data_state.dart';
+import '../../services/error_reporter.dart';
 
 class InsightsScreen extends StatefulWidget {
   const InsightsScreen({super.key});
@@ -21,123 +23,176 @@ class _InsightsScreenState extends State<InsightsScreen> {
     final key = '${pantry.revision}|${pantry.selectedHomeId}';
     if (_key != key) {
       _key = key;
-      _future = pantry.data.getInsights(homeId: pantry.selectedHomeId);
+      _future = pantry.data
+          .getInsights(homeId: pantry.selectedHomeId)
+          .catchError((Object e, StackTrace s) {
+            ErrorReporter.capture(e, s);
+            throw e;
+          });
     }
     return Scaffold(
       appBar: AppBar(title: const Text('Usage & waste')),
-      body: FutureBuilder<PantryInsights>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done)
-            return const Center(child: CircularProgressIndicator());
-          if (snapshot.hasError)
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Usage reports could not be loaded.'),
-                    TextButton(
-                      onPressed: () => setState(() => _key = null),
-                      child: const Text('Try again'),
-                    ),
-                  ],
+      body: PantryDataState(
+        child: FutureBuilder<PantryInsights>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done)
+              return const Center(
+                child: CircularProgressIndicator(
+                  semanticsLabel: 'Loading usage reports',
                 ),
-              ),
-            );
-          final stats = snapshot.data!;
-          final now = DateTime.now();
-          final expired = pantry.items
-              .where((i) => i.daysUntilExpiry() < 0)
-              .fold<num>(0, (sum, i) => sum + i.value);
-          final months = {
-            for (final m in stats.months) m['month'] as String: m,
-          };
-          return ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Text(
-                pantry.selectedHomeName,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 20),
-              _Metric(
-                'Pantry value',
-                '${pantry.totalValue.toStringAsFixed(2)} $currency',
-              ),
-              _Metric(
-                'Expired stock value',
-                '${expired.toStringAsFixed(2)} $currency',
-              ),
-              _Metric(
-                'Recorded waste',
-                '${stats.wastedValue.toStringAsFixed(2)} $currency',
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Last 6 months',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const Text(
-                'Value of stock used and discarded. Set purchase prices for value totals.',
-              ),
-              const SizedBox(height: 12),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  columnSpacing: 20,
-                  columns: const [
-                    DataColumn(label: Text('Month')),
-                    DataColumn(label: Text('Used'), numeric: true),
-                    DataColumn(label: Text('Wasted'), numeric: true),
-                  ],
-                  rows: [
-                    for (var n = 5; n >= 0; n--)
-                      (() {
-                        final month = DateTime(now.year, now.month - n);
-                        final label =
-                            '${month.year}-${month.month.toString().padLeft(2, '0')}';
-                        final row = months[label];
-                        return DataRow(
-                          cells: [
-                            DataCell(Text(label)),
-                            DataCell(
-                              Text(
-                                (row?['used'] as num? ?? 0).toStringAsFixed(2),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                (row?['wasted'] as num? ?? 0).toStringAsFixed(
-                                  2,
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      })(),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text('Most used', style: Theme.of(context).textTheme.titleLarge),
-              if (stats.mostUsed.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text(
-                    'Record usage from a batch to see what your household uses most.',
+              );
+            if (snapshot.hasError)
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Usage reports could not be loaded.'),
+                      TextButton(
+                        onPressed: () => setState(() => _key = null),
+                        child: const Text('Try again'),
+                      ),
+                    ],
                   ),
                 ),
-              for (final item in stats.mostUsed)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('${item['name']} (${item['unit']})'),
-                  trailing: Text(formatAmount(item['quantity'] as num)),
+              );
+            final stats = snapshot.data!;
+            final now = DateTime.now();
+            final expired = pantry.items
+                .where((i) => i.daysUntilExpiry() < 0)
+                .fold<num>(0, (sum, i) => sum + i.value);
+            final months = {
+              for (final m in stats.months) m['month'] as String: m,
+            };
+            return ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                Text(
+                  pantry.selectedHomeName,
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-            ],
-          );
-        },
+                const SizedBox(height: 20),
+                _Metric(
+                  'Pantry value',
+                  '${pantry.totalValue.toStringAsFixed(2)} $currency',
+                ),
+                _Metric(
+                  'Expired stock value',
+                  '${expired.toStringAsFixed(2)} $currency',
+                ),
+                _Metric(
+                  'Recorded waste',
+                  '${stats.wastedValue.toStringAsFixed(2)} $currency',
+                ),
+                _Metric(
+                  'Lost to expiry',
+                  '${stats.expiredLoss.toStringAsFixed(2)} $currency',
+                ),
+                if (stats.unclassifiedWaste > 0)
+                  Text(
+                    '${stats.unclassifiedWaste.toStringAsFixed(2)} $currency of older waste has no recorded reason.',
+                  ),
+                const SizedBox(height: 24),
+                Text(
+                  'Last 6 months',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const Text(
+                  'Value of stock used and discarded. Set purchase prices for value totals.',
+                ),
+                const SizedBox(height: 12),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columnSpacing: 20,
+                    columns: const [
+                      DataColumn(label: Text('Month')),
+                      DataColumn(label: Text('Used'), numeric: true),
+                      DataColumn(label: Text('Wasted'), numeric: true),
+                      DataColumn(label: Text('Expired'), numeric: true),
+                    ],
+                    rows: [
+                      for (var n = 5; n >= 0; n--)
+                        (() {
+                          final month = DateTime(now.year, now.month - n);
+                          final label =
+                              '${month.year}-${month.month.toString().padLeft(2, '0')}';
+                          final row = months[label];
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(label)),
+                              DataCell(
+                                Text(
+                                  (row?['used'] as num? ?? 0).toStringAsFixed(
+                                    2,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                Text(
+                                  (row?['wasted'] as num? ?? 0).toStringAsFixed(
+                                    2,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                Text(
+                                  (row?['expired'] as num? ?? 0)
+                                      .toStringAsFixed(2),
+                                ),
+                              ),
+                            ],
+                          );
+                        })(),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Most used',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                if (stats.mostUsed.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'Record usage from a batch to see what your household uses most.',
+                    ),
+                  ),
+                for (final item in stats.mostUsed)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('${item['name']} (${item['unit']})'),
+                    subtitle: Text(
+                      '${formatAmount(item['quantity'] as num)} ${item['unit']} used',
+                    ),
+                  ),
+                const SizedBox(height: 24),
+                Text(
+                  'Most wasted',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                if (stats.mostWasted.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'No waste recorded. Open a batch and choose Record as wasted when discarding food.',
+                    ),
+                  ),
+                for (final item in stats.mostWasted)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('${item['name']}'),
+                    subtitle: Text(
+                      '${formatAmount(item['quantity'] as num)} ${item['unit']} discarded · ${(item['value'] as num).toStringAsFixed(2)} $currency',
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

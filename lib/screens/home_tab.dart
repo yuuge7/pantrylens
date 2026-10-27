@@ -33,12 +33,12 @@ class HomeTab extends StatelessWidget {
       (settings) => settings.useSoonDays,
     );
 
-    if (pantry.isLoading && pantry.items.isEmpty) {
+    if (pantry.isLoading && !pantry.hasLoaded) {
       return const Center(child: CircularProgressIndicator());
     }
 
     final errorMessage = pantry.errorMessage;
-    if (errorMessage != null && pantry.items.isEmpty) {
+    if (errorMessage != null && !pantry.hasLoaded) {
       return MessageState(
         icon: Icons.error_outline_rounded,
         title: 'Pantry unavailable',
@@ -280,8 +280,8 @@ class _SectionHeader extends StatelessWidget {
     final actionLabel = this.actionLabel;
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: SizedBox(
-        height: 40,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
         child: Row(
           children: [
             Expanded(

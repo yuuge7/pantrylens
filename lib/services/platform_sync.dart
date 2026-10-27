@@ -5,6 +5,7 @@ import '../settings_provider.dart';
 import 'error_reporter.dart';
 import 'reminder_service.dart';
 import 'widget_service.dart';
+import 'photo_cache.dart';
 
 /// Debounces database changes and refreshes local-date dependent surfaces.
 class PlatformSync with WidgetsBindingObserver {
@@ -39,6 +40,12 @@ class PlatformSync with WidgetsBindingObserver {
         } catch (e, s) {
           await ErrorReporter.capture(e, s);
         }
+        unawaited(
+          PhotoCache.instance.sync([
+            ...pantry.allItems.map((i) => i.imageUrl),
+            ...pantry.allShoppingItems.map((i) => i.imageUrl),
+          ]),
+        );
       });
     });
   }

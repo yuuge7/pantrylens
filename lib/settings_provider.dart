@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/error_reporter.dart';
 
 enum InventorySort { name, expiry, quantity, recent }
 
@@ -34,14 +36,25 @@ class SettingsProvider extends ChangeNotifier {
     if (extra != null) {
       try {
         _extra.addAll((jsonDecode(extra) as Map).cast<String, dynamic>());
-      } catch (_) {
-        /* Fall back to safe defaults for damaged preferences. */
+      } catch (error, stack) {
+        persistenceError =
+            'Some preferences could not be read. Review your settings and retry saving.';
+        unawaited(ErrorReporter.capture(error, stack));
       }
     }
   }
 
   static Future<SettingsProvider> load() async {
-    return SettingsProvider(await SharedPreferences.getInstance());
+    try {
+      return SettingsProvider(await SharedPreferences.getInstance());
+    } catch (error, stack) {
+      unawaited(ErrorReporter.capture(error, stack));
+      final settings = SettingsProvider();
+      settings._extra['onboardingComplete'] = false;
+      settings.persistenceError =
+          'Preferences could not be loaded. Changes are temporary until you retry saving.';
+      return settings;
+    }
   }
 
   static const List<int> shelfLifeOptions = [7, 14, 30, 90, 180, 365];
@@ -56,7 +69,57 @@ class SettingsProvider extends ChangeNotifier {
   static const String _vibrateOnScanKey = 'vibrateOnScan';
   static const String _addUsedUpKey = 'addUsedUpToShoppingList';
 
-  final SharedPreferences? _prefs;
+  SharedPreferences? _prefs;
+  String? persistenceError;
+  bool _disposed = false;
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  Future<void> _save(Future<bool>? result) async {
+    if (result == null) return;
+    try {
+      if (!await result)
+        throw StateError('Preference storage rejected the write');
+    } catch (error, stack) {
+      persistenceError =
+          'Preferences could not be saved. Retry before closing the app.';
+      unawaited(ErrorReporter.capture(error, stack));
+      _notify();
+    }
+  }
+
+  Future<void> retryPersistence() async {
+    try {
+      final prefs = _prefs ??= await SharedPreferences.getInstance();
+      final saved = await Future.wait([
+        prefs.setString(_themeModeKey, _themeMode.name),
+        prefs.setString(_inventorySortKey, _inventorySort.name),
+        prefs.setInt(_shelfLifeDaysKey, _shelfLifeDays),
+        prefs.setInt(_useSoonDaysKey, _useSoonDays),
+        prefs.setBool(_lookUpProductsKey, _lookUpProducts),
+        prefs.setBool(_keepScanningKey, _keepScanning),
+        prefs.setBool(_vibrateOnScanKey, _vibrateOnScan),
+        prefs.setBool(_addUsedUpKey, _addUsedUpToShoppingList),
+        prefs.setString('householdSettings', jsonEncode(_extra)),
+      ]);
+      if (saved.any((v) => !v))
+        throw StateError('Preference storage rejected the write');
+      persistenceError = null;
+    } catch (error, stack) {
+      persistenceError =
+          'Preferences could not be saved. Check available storage and retry.';
+      unawaited(ErrorReporter.capture(error, stack));
+    }
+    _notify();
+  }
+
   final Map<String, dynamic> _extra = {};
   bool get onboardingComplete =>
       _extra['onboardingComplete'] as bool? ?? (_prefs == null);
@@ -72,9 +135,8 @@ class SettingsProvider extends ChangeNotifier {
       _extra.containsKey('homeId') ? _extra['homeId'] as String? : 'main';
   Future<void> setExtra(String key, dynamic value) async {
     _extra[key] = value;
-    if (_prefs != null)
-      await _prefs.setString('householdSettings', jsonEncode(_extra));
-    notifyListeners();
+    await _save(_prefs?.setString('householdSettings', jsonEncode(_extra)));
+    _notify();
   }
 
   ThemeMode _themeMode = ThemeMode.system;
@@ -102,57 +164,57 @@ class SettingsProvider extends ChangeNotifier {
   set themeMode(ThemeMode value) {
     if (value == _themeMode) return;
     _themeMode = value;
-    _prefs?.setString(_themeModeKey, value.name);
-    notifyListeners();
+    unawaited(_save(_prefs?.setString(_themeModeKey, value.name)));
+    _notify();
   }
 
   set inventorySort(InventorySort value) {
     if (value == _inventorySort) return;
     _inventorySort = value;
-    _prefs?.setString(_inventorySortKey, value.name);
-    notifyListeners();
+    unawaited(_save(_prefs?.setString(_inventorySortKey, value.name)));
+    _notify();
   }
 
   set shelfLifeDays(int value) {
     if (value == _shelfLifeDays || value < 1) return;
     _shelfLifeDays = value;
-    _prefs?.setInt(_shelfLifeDaysKey, value);
-    notifyListeners();
+    unawaited(_save(_prefs?.setInt(_shelfLifeDaysKey, value)));
+    _notify();
   }
 
   set useSoonDays(int value) {
     if (value == _useSoonDays || value < 1) return;
     _useSoonDays = value;
-    _prefs?.setInt(_useSoonDaysKey, value);
-    notifyListeners();
+    unawaited(_save(_prefs?.setInt(_useSoonDaysKey, value)));
+    _notify();
   }
 
   set lookUpProducts(bool value) {
     if (value == _lookUpProducts) return;
     _lookUpProducts = value;
-    _prefs?.setBool(_lookUpProductsKey, value);
-    notifyListeners();
+    unawaited(_save(_prefs?.setBool(_lookUpProductsKey, value)));
+    _notify();
   }
 
   set keepScanning(bool value) {
     if (value == _keepScanning) return;
     _keepScanning = value;
-    _prefs?.setBool(_keepScanningKey, value);
-    notifyListeners();
+    unawaited(_save(_prefs?.setBool(_keepScanningKey, value)));
+    _notify();
   }
 
   set vibrateOnScan(bool value) {
     if (value == _vibrateOnScan) return;
     _vibrateOnScan = value;
-    _prefs?.setBool(_vibrateOnScanKey, value);
-    notifyListeners();
+    unawaited(_save(_prefs?.setBool(_vibrateOnScanKey, value)));
+    _notify();
   }
 
   set addUsedUpToShoppingList(bool value) {
     if (value == _addUsedUpToShoppingList) return;
     _addUsedUpToShoppingList = value;
-    _prefs?.setBool(_addUsedUpKey, value);
-    notifyListeners();
+    unawaited(_save(_prefs?.setBool(_addUsedUpKey, value)));
+    _notify();
   }
 
   static T _enumByName<T extends Enum>(

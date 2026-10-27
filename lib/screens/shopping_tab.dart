@@ -290,7 +290,10 @@ class _ShoppingTabState extends State<ShoppingTab> {
       child: Dismissible(
         key: ValueKey('shopping-${item.id}'),
         direction: DismissDirection.endToStart,
-        onDismissed: (_) => removeShoppingItemWithUndo(context, item),
+        confirmDismiss: (_) async {
+          await removeShoppingItemWithUndo(context, item);
+          return false;
+        },
         background: Container(
           decoration: BoxDecoration(
             color: colors.errorContainer,
@@ -320,78 +323,94 @@ class _ShoppingTabState extends State<ShoppingTab> {
             onTap: () => openShoppingItemSheet(context, item),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(6, 10, 8, 10),
-              child: Row(
-                children: [
-                  Checkbox(
-                    visualDensity: VisualDensity.compact,
-                    value: item.isChecked,
-                    semanticLabel: item.name,
-                    onChanged:
-                        (value) =>
-                            _update(item.copyWith(isChecked: value ?? false)),
-                  ),
-                  Opacity(
-                    opacity: item.isChecked ? 0.5 : 1,
-                    child: ProductImage(
-                      imageUrl: item.imageUrl ?? inPantry?.imageUrl,
-                      size: 48,
-                      viewerTitle: item.name,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color:
-                                item.isChecked ? colors.onSurfaceVariant : null,
-                            decoration:
-                                item.isChecked
-                                    ? TextDecoration.lineThrough
-                                    : null,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final stacked =
+                      constraints.maxWidth < 380 ||
+                      MediaQuery.textScalerOf(context).scale(14) > 20;
+                  final counter =
+                      item.isChecked
+                          ? Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              '${formatAmount(item.quantity)} ${item.unit}',
+                              style: theme.textTheme.titleSmall,
+                            ),
+                          )
+                          : QuantityStepper(
+                            compact: true,
+                            quantity: item.quantity,
+                            itemName: item.name,
+                            onChanged:
+                                (value) =>
+                                    _update(item.copyWith(quantity: value)),
+                          );
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Checkbox(
+                            visualDensity: VisualDensity.standard,
+                            value: item.isChecked,
+                            semanticLabel: item.name,
+                            onChanged:
+                                (value) => _update(
+                                  item.copyWith(isChecked: value ?? false),
+                                ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          inStock == 0
-                              ? 'None in pantry'
-                              : '$inStock in pantry',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
+                          Opacity(
+                            opacity: item.isChecked ? 0.5 : 1,
+                            child: ProductImage(
+                              imageUrl: item.imageUrl ?? inPantry?.imageUrl,
+                              size: 48,
+                              viewerTitle: item.name,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (item.isChecked)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: Text(
-                        '${formatAmount(item.quantity)} ${item.unit}',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color:
+                                        item.isChecked
+                                            ? colors.onSurfaceVariant
+                                            : null,
+                                    decoration:
+                                        item.isChecked
+                                            ? TextDecoration.lineThrough
+                                            : null,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  inStock == 0
+                                      ? 'None in pantry'
+                                      : '$inStock in pantry',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (!stacked) counter,
+                        ],
                       ),
-                    )
-                  else
-                    QuantityStepper(
-                      compact: true,
-                      quantity: item.quantity,
-                      itemName: item.name,
-                      onChanged:
-                          (value) => _update(item.copyWith(quantity: value)),
-                    ),
-                ],
+                      if (stacked)
+                        Align(alignment: Alignment.centerRight, child: counter),
+                    ],
+                  );
+                },
               ),
             ),
           ),

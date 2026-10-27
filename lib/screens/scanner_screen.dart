@@ -9,6 +9,7 @@ import '../app_theme.dart';
 import '../pantry_actions.dart';
 import '../pantry_provider.dart';
 import '../settings_provider.dart';
+import '../services/error_reporter.dart';
 
 /// Full-screen camera scanner. Pops with a [ScanOutcome] after one item, or
 /// stays open when "Keep scanning" is on.
@@ -48,9 +49,22 @@ class _ScannerScreenState extends State<ScannerScreen>
       case AppLifecycleState.paused:
         return;
       case AppLifecycleState.resumed:
-        unawaited(_controller.start());
+        unawaited(_cameraAction(_controller.start));
       case AppLifecycleState.inactive:
-        unawaited(_controller.stop());
+        unawaited(_cameraAction(_controller.stop));
+    }
+  }
+
+  Future<void> _cameraAction(Future<void> Function() action) async {
+    try {
+      await action();
+    } catch (error, stack) {
+      await ErrorReporter.capture(error, stack);
+      if (mounted)
+        showMessage(
+          context,
+          'Camera unavailable. Retry the camera or enter a barcode.',
+        );
     }
   }
 
@@ -157,7 +171,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                           state.torchState == TorchState.on
                               ? 'Turn off flashlight'
                               : 'Turn on flashlight',
-                      onPressed: _controller.toggleTorch,
+                      onPressed: () => _cameraAction(_controller.toggleTorch),
                       icon: Icon(
                         state.torchState == TorchState.on
                             ? Icons.flashlight_on_rounded
@@ -167,7 +181,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                   if (canSwitch)
                     IconButton(
                       tooltip: 'Switch camera',
-                      onPressed: () => _controller.switchCamera(),
+                      onPressed: () => _cameraAction(_controller.switchCamera),
                       icon: const Icon(Icons.cameraswitch_outlined),
                     ),
                 ],
@@ -183,7 +197,11 @@ class _ScannerScreenState extends State<ScannerScreen>
           MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
-            errorBuilder: (context, error) => _ScannerError(error: error),
+            errorBuilder:
+                (context, error) => _ScannerError(
+                  error: error,
+                  onRetry: () => _cameraAction(_controller.start),
+                ),
           ),
           ValueListenableBuilder<MobileScannerState>(
             valueListenable: _controller,
@@ -197,19 +215,26 @@ class _ScannerScreenState extends State<ScannerScreen>
             alignment: Alignment.bottomCenter,
             child: SafeArea(
               minimum: const EdgeInsets.all(16),
-              child: _ScannerPanel(
-                status:
-                    _isHandlingBarcode
-                        ? 'Adding item to your pantry…'
-                        : _lastResult ??
-                            'Point the camera at a product barcode',
-                isBusy: _isHandlingBarcode,
-                addedCount: keepScanning ? _addedCount : null,
-                onEnterBarcode: _isHandlingBarcode ? null : _enterBarcode,
-                onDone:
-                    keepScanning && _addedCount > 0
-                        ? () => Navigator.of(context).pop()
-                        : null,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.45,
+                ),
+                child: SingleChildScrollView(
+                  child: _ScannerPanel(
+                    status:
+                        _isHandlingBarcode
+                            ? 'Adding item to your pantry…'
+                            : _lastResult ??
+                                'Point the camera at a product barcode',
+                    isBusy: _isHandlingBarcode,
+                    addedCount: keepScanning ? _addedCount : null,
+                    onEnterBarcode: _isHandlingBarcode ? null : _enterBarcode,
+                    onDone:
+                        keepScanning && _addedCount > 0
+                            ? () => Navigator.of(context).pop()
+                            : null,
+                  ),
+                ),
               ),
             ),
           ),
@@ -375,9 +400,10 @@ class _ScannerPanel extends StatelessWidget {
 }
 
 class _ScannerError extends StatelessWidget {
-  const _ScannerError({required this.error});
+  const _ScannerError({required this.error, required this.onRetry});
 
   final MobileScannerException error;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -402,8 +428,8 @@ class _ScannerError extends StatelessWidget {
     return ColoredBox(
       color: AppTheme.canopy,
       child: Center(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(32, 32, 32, 160),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(32, 100, 32, 280),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -428,6 +454,11 @@ class _ScannerError extends StatelessWidget {
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: Colors.white70,
                 ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: onRetry,
+                child: const Text('Retry camera'),
               ),
             ],
           ),

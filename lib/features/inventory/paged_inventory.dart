@@ -132,7 +132,7 @@ class _PagedInventoryState extends State<PagedInventory> {
             .length;
     final expired = pantry.items.where((i) => i.daysUntilExpiry() < 0).length;
     final selected = pantry.items.where((i) => i.id == _selected).firstOrNull;
-    final wide = MediaQuery.sizeOf(context).width >= 1000;
+    final wide = MediaQuery.sizeOf(context).width >= 840;
     final list = Column(
       children: [
         Padding(

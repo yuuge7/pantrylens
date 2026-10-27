@@ -158,11 +158,18 @@ Future<void> openShoppingItemSheet(
   }
 }
 
-void removeShoppingItemWithUndo(BuildContext context, ShoppingItem item) {
+Future<void> removeShoppingItemWithUndo(
+  BuildContext context,
+  ShoppingItem item,
+) async {
   final pantry = context.read<PantryProvider>();
-  pantry.removeShoppingItem(item).catchError((Object _) {
+  try {
+    await pantry.removeShoppingItem(item);
+  } catch (_) {
     if (context.mounted) showMessage(context, 'Item not removed. Try again.');
-  });
+    return;
+  }
+  if (!context.mounted) return;
   showMessage(
     context,
     'Removed ${item.name}',

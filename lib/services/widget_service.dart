@@ -4,13 +4,11 @@ import '../pantry_provider.dart';
 import '../settings_provider.dart';
 
 class WidgetService {
-  static const appGroup = 'group.com.pantrylens.pantrylens';
   static Future<void> sync(
     PantryProvider pantry,
     SettingsProvider settings,
   ) async {
-    if (!(Platform.isAndroid || Platform.isIOS)) return;
-    if (Platform.isIOS) await HomeWidget.setAppGroupId(appGroup);
+    if (!Platform.isAndroid) return;
     final soon =
         pantry.items
             .where((i) => i.daysUntilExpiry() <= settings.useSoonDays)
@@ -39,13 +37,7 @@ class WidgetService {
       'updated',
       'Updated ${DateTime.now().toLocal().toString().substring(0, 16)}',
     );
-    await HomeWidget.updateWidget(
-      androidName: 'PantryWidgetProvider',
-      iOSName: 'PantryLensWidget',
-    );
-    await HomeWidget.updateWidget(
-      androidName: 'ShoppingWidgetProvider',
-      iOSName: 'PantryLensShoppingWidget',
-    );
+    await HomeWidget.updateWidget(androidName: 'PantryWidgetProvider');
+    await HomeWidget.updateWidget(androidName: 'ShoppingWidgetProvider');
   }
 }

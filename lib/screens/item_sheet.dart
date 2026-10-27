@@ -9,6 +9,7 @@ import '../pantry_item.dart';
 import '../pantry_provider.dart';
 import '../settings_provider.dart';
 import '../widgets/sheet_parts.dart';
+import '../features/insights/waste_dialog.dart';
 
 enum ItemSheetAction { delete }
 
@@ -549,9 +550,20 @@ class _ItemSheetState extends State<ItemSheet> {
                       _busy
                           ? null
                           : () async {
+                            final current =
+                                pantry.allItems
+                                    .where((i) => i.id == _item.id)
+                                    .firstOrNull;
+                            if (current == null) return;
+                            final entry = await askWaste(context, current);
+                            if (entry == null || !mounted) return;
                             setState(() => _busy = true);
                             try {
-                              await pantry.removeItem(_item, wasted: true);
+                              await pantry.discardBatch(
+                                current,
+                                entry.amount,
+                                entry.reason,
+                              );
                               if (mounted) Navigator.pop(context);
                             } catch (_) {
                               if (mounted)

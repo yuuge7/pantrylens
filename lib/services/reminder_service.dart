@@ -89,7 +89,7 @@ List<PlannedReminder> planReminders(
     }
   }
   result.sort((a, b) => a.at.compareTo(b.at));
-  return result.take(60).toList(); // Below iOS's 64 pending-notification limit.
+  return result.take(60).toList();
 }
 
 class ReminderService {
@@ -97,7 +97,7 @@ class ReminderService {
   final plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   Future<void> initialize() async {
-    if (_initialized || !(Platform.isAndroid || Platform.isIOS)) return;
+    if (_initialized || !Platform.isAndroid) return;
     tzdata.initializeTimeZones();
     tz.setLocalLocation(
       tz.getLocation((await FlutterTimezone.getLocalTimezone()).identifier),
@@ -105,11 +105,6 @@ class ReminderService {
     await plugin.initialize(
       settings: const InitializationSettings(
         android: AndroidInitializationSettings('@drawable/ic_notification'),
-        iOS: DarwinInitializationSettings(
-          requestAlertPermission: false,
-          requestBadgePermission: false,
-          requestSoundPermission: false,
-        ),
       ),
     );
     _initialized = true;
@@ -123,13 +118,6 @@ class ReminderService {
                 AndroidFlutterLocalNotificationsPlugin
               >()
               ?.requestNotificationsPermission() ??
-          false;
-    if (Platform.isIOS)
-      return await plugin
-              .resolvePlatformSpecificImplementation<
-                IOSFlutterLocalNotificationsPlugin
-              >()
-              ?.requestPermissions(alert: true, badge: true, sound: true) ??
           false;
     return false;
   }
@@ -162,7 +150,6 @@ class ReminderService {
             'Expiry reminders',
             channelDescription: 'Food to use before its best-before date',
           ),
-          iOS: DarwinNotificationDetails(),
         ),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );

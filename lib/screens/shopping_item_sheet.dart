@@ -117,6 +117,7 @@ class _ShoppingItemSheetState extends State<ShoppingItemSheet> {
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _aisle,
+              isExpanded: true,
               decoration: const InputDecoration(labelText: 'Store aisle'),
               items:
                   {_aisle, ...PantryItem.categories}
@@ -159,31 +160,28 @@ class _ShoppingItemSheetState extends State<ShoppingItemSheet> {
               ),
             ],
             const SizedBox(height: 8),
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed:
-                        hasName && !_isSaving
-                            ? () => _save(isChecked: !item.isChecked)
-                            : null,
-                    icon: Icon(
-                      item.isChecked
-                          ? Icons.undo_rounded
-                          : Icons.shopping_basket_outlined,
-                    ),
-                    label: Text(item.isChecked ? 'Back to list' : 'In basket'),
+                OutlinedButton.icon(
+                  onPressed:
+                      hasName && !_isSaving
+                          ? () => _save(isChecked: !item.isChecked)
+                          : null,
+                  icon: Icon(
+                    item.isChecked
+                        ? Icons.undo_rounded
+                        : Icons.shopping_basket_outlined,
                   ),
+                  label: Text(item.isChecked ? 'Back to list' : 'In basket'),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextButton.icon(
-                    style: TextButton.styleFrom(foregroundColor: colors.error),
-                    onPressed:
-                        () => Navigator.of(context).pop(ItemSheetAction.delete),
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    label: const Text('Remove'),
-                  ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: colors.error),
+                  onPressed:
+                      () => Navigator.of(context).pop(ItemSheetAction.delete),
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: const Text('Remove'),
                 ),
               ],
             ),

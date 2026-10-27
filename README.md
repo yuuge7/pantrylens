@@ -1,32 +1,33 @@
 # PantryLens
 
-PantryLens is a native Android and iOS pantry inventory app built with Flutter.
+PantryLens is an Android pantry inventory app built with Flutter.
 Scan a product barcode to add it to your pantry, look up its name and image with
 Open Food Facts, and keep inventory quantities in a local SQLite database.
 
 ## Features
 
-The `ideas.md` roadmap is implemented as local-first household tools:
+Local-first tools for pantry inventory and household planning.
 
 - Independent product batches, fractional amounts (g, kg, ml, l, pieces and
   bottles), oldest-first usage, opened-package expiry, tags and categories
 - Multiple homes, custom storage locations, location/category filters and moving
   batches between homes or locations
 - Minimum-stock rules that generate shopping entries, purchase prices and stores,
-  pantry value, recorded waste, monthly usage and most-used products
+  pantry value, expiry-specific losses, partial waste with reasons, monthly usage,
+  most-used and most-wasted products
 - Camera/library OCR for printed dates and receipts, with review before saving;
   manual corrections for names, photos, ingredients and allergens
 - Open Food Facts API v2 with Open Products Facts fallback, nutrition per 100 g,
-  household allergy warnings and persistent product-photo caching
+  household allergy warnings and persistent offline product photos
 - Local expiry notifications, individual reminders or daily digests, configurable
   reminder time and quiet hours; Use soon and Shopping home screen widgets
 - Shopping by aisle, system sharing, purchase history and event ingredient lists
 - Assigned staff checklists with due dates and photos; guest/household dietary
   profiles, allergies and favorites; meal/event planning and an activity log
 - Three-step onboarding with an optional sample pantry, tablet navigation and a
-  two-pane inventory, large-text layouts and labelled controls
-- Local diagnostic logging and optional Sentry crash reporting, schema migration
-  tests, model/provider/backup tests, PR checks and paged inventory queries
+  two-pane inventory, large-text layouts, labelled controls and retry states
+- Local diagnostic logging, optional Sentry crash reporting and paged inventory
+  queries
 
 Use the home menu to select a property or **All homes**. The **+** menu adds a
 batch, enters a barcode or scans a receipt. Open a batch to set its location,
@@ -40,14 +41,27 @@ location, unit and best-before date match. **Add a batch** always makes an
 independent batch. Usage consumes the earliest effective expiry first within
 the chosen home and unit. Stock thresholds are per product, home and unit and
 continue working after the last batch is used. Receipt OCR supplies suggested
-names, amounts and prices; verify the lines and edit each batch's expiry after
-import. Ambiguous printed dates offer both interpretations for review.
+names, amounts, units and prices. Review and edit each suggested line, add missed
+items, exclude unwanted lines, choose a home and set a shared expiry before import.
+The parser accepts dot/comma prices, tax flags, wrapped item names, separate
+quantity/price lines and weighted items; receipt formats vary, so review is required.
+Ambiguous printed dates offer both interpretations. Month-only dates use the last
+day of that month.
+
+**Record as wasted** in a batch lets you enter a partial amount and a reason:
+past expiry, spoiled/damaged, or another reason. **Usage & waste** separates
+actual expiry losses from current expired stock value. History from before
+schema v5 keeps its waste total with an unspecified reason rather than guessing
+the cause. Reports aggregate the full history across the selected home or all homes.
 
 Households are stored on this device. Shopping lists are shared as messages
 through the system share sheet. Inventory JSON exports preserve batches and all
 their fields and accept older v1 exports; they are inventory exports, rather
 than backups of tasks, guest profiles, activity, settings or local photo files.
 There is no account service or automatic cross-device synchronization.
+Replacing an inventory affects the selected home; choose **All homes** to replace
+the combined inventory. Bulk imports and removals record the current operator
+in the activity log in the same database transaction.
 
 - Barcode scanning with the device camera, flashlight and camera switching, and
   manual barcode entry
@@ -82,7 +96,6 @@ incremented without a product lookup.
 
 - Flutter SDK 3.47.0 (stable) and Dart from the matching Flutter SDK
 - Android Studio with the Android SDK Platform and Android SDK Command-line Tools
-- Xcode on macOS for iOS development
 - A physical device or emulator for camera scanning
 
 ## Set up a development machine
@@ -102,62 +115,25 @@ flutter devices
 flutter run -d <device-id>
 ```
 
-Android needs the Android SDK and an emulator or device with camera support. For
-iOS, use macOS with Xcode installed, then select an iOS simulator or connected
-device. In Android Studio's SDK Manager, install the Android SDK Platform and
+Android needs the Android SDK and an emulator or device with camera support.
+In Android Studio's SDK Manager, install the Android SDK Platform and
 Android SDK Command-line Tools, then accept Android licenses with
 `flutter doctor --android-licenses`. Camera permission declarations are
 included in the native platform projects. Open Food Facts lookups require an
 internet connection.
 
-To run static analysis and the device integration checks:
+Check formatting, analyze the app and build an Android APK:
 
 ```sh
+dart format --output=none --set-exit-if-changed lib
 flutter analyze
-flutter test
-flutter test integration_test/pantrylens_smoke_test.dart -d <device-id>
-flutter test integration_test/roadmap_test.dart -d <device-id>
+flutter build apk --debug
 ```
 
-The integration checks cover inventory insertion and increments, tab
-navigation, quantity controls, switching to dark mode, scanner navigation,
-editing a shopping list entry, the inventory export format and import, and
-parsing an Open Food Facts response. The API parsing check uses
-a mock HTTP client so it remains deterministic and does not depend on emulator
-DNS or external service availability.
-
-The roadmap integration suite also runs native ML Kit recognition against a
-generated package/receipt image, receipt review/import, household checklists,
-batch/FIFO behavior, widget data, notification scheduling/cancellation and a
-5,000-batch browsing check with frame timing measurements. Unit tests cover migrations from schema versions
-1, 2 and 3, partial amounts, opening dates, idempotent imports, atomic invalid
-imports, concurrent stock changes, minimum-stock rules, dietary profiles,
-receipt/date parsing, event unit conversions and quiet hours. UI tests exercise
-phone, large-text, tablet and landscape sizes.
-
-Inventory reads are limited to 60 rows per page (hard maximum 200), with lazy
-row rendering, indexed home/name/barcode/expiry fields and debounced search.
-The automated budget allows under one second for a 60-row emulator database
-query against 5,000 batches and under 15 seconds for the complete host fixture
-insertion and paging test. Capture scroll performance in profile mode for a
-release decision; debug traces include instrumentation overhead. Cold-start
-target: under two seconds to a usable first screen on a current device. Scroll
-target: 60 fps on a 60 Hz display; these are device performance targets rather
-than guarantees from host unit tests.
-
-The local Android 17/API 37 emulator profile run measured a 3.907-second cold
-Activity launch and 762 ms from Dart entry to its first frame. A 60-row read from
-5,000 batches took 17.135 ms. The physical-device two-second cold-start target
-still needs device validation. Tabs mount on first use, startup reads use one
-consistent database batch, and usage reports aggregate the complete stored
-history independently of the activity feed's display limit.
-
-Build with `--dart-define=PROFILE_STARTUP=true` to print Dart startup milestones
-to the device log. The default build leaves this instrumentation off.
-
-For a full VM timeline on a physical device, run
-`flutter drive --profile --no-dds -d <device-id> --driver=test_driver/integration_test.dart --target=integration_test/roadmap_test.dart --dart-define=CAPTURE_TIMELINE=true`.
-The driver writes measurements to `build/integration_response_data.json`.
+Inventory queries use indexed fields, bounded pages and debounced search.
+Tabs load on first use, and usage reports aggregate the complete stored history.
+Pull requests run formatting checks, static analysis and an Android debug build.
+The release workflow analyzes the app before building signed Android artifacts.
 
 ## Notifications, widgets and diagnostics
 
@@ -170,27 +146,32 @@ alarms, so delivery may be delayed by the OS. Reopen the app periodically to
 refresh the schedule. Both home screen widgets show their last refresh time;
 open the app to update their snapshots.
 
-Android widgets are registered in the manifest. iOS includes an embedded
-WidgetKit extension with both widgets. On a Mac, enable the App Group
-`group.com.pantrylens.pantrylens` for the Runner and PantryLensWidgets targets
-in your Apple Developer provisioning profiles. ML Kit requires iOS 15.5 or
-newer. iOS compilation and signing require Xcode and must be verified on macOS.
+Android widgets are registered in the manifest. Add **Use soon** or **Shopping**
+from the launcher's widget picker and resize to show more rows.
 
-Errors are recorded in the app's bounded local diagnostic log, viewable under
+Errors are appended to the app's bounded local diagnostic log across restarts,
+viewable under
 **Settings → Diagnostics**. To enable remote crash reporting for your own
 Sentry project, build with `--dart-define=SENTRY_DSN=<your-dsn>`. No remote
-reporting is initialized without a DSN. Sentry 9 is retained for Android 7
-compatibility, with project-level Kotlin/compile-SDK compatibility settings.
-Photo cache contents may be evicted by the OS; a corrected photo picked from
+reporting is initialized without a DSN. **Run diagnostic check** records an
+intentional non-fatal event so a configured project can confirm delivery. Set
+the optional `SENTRY_DSN` Actions secret to include it in automated Android releases.
+Sentry 9 is retained for Android 7 compatibility, with project-level
+Kotlin/compile-SDK compatibility settings.
+Product and shopping photos for every home download in the background, with
+two bounded downloads at once and an 8 MB per-photo limit. Saved photos live in
+application support rather than the temporary image cache and are reused after
+restarts without contacting the server. **Settings → Offline photos** shows
+progress, missing downloads and a retry action. A corrected photo picked from
 the library is copied to the app's documents directory.
 
 ## Contributing
 
 After setting up the development environment above, create a feature branch,
-make and format your changes, then run `flutter analyze` and the integration
-checks on an emulator or device. Open a pull request against `main` with a short
-summary of the change and any relevant screenshots. Debug development and
-integration tests do not require the Android release signing key.
+make and format your changes, then run `flutter analyze` and check the app on
+an Android emulator or device. Open a pull request against `main` with a short
+summary of the change and any relevant screenshots. Debug builds do not require
+the Android release signing key.
 
 ## Project structure
 
@@ -216,11 +197,8 @@ lib/
   widgets/               Shared widgets
 assets/
   icon.png               Launcher icon source image
-integration_test/        Device integration checks
-test/                    Model, provider, backup, migration and UI tests
 android/                 Android project and release signing configuration
-ios/                     iOS project
-.github/workflows/       Automated Android release workflow
+.github/workflows/       Analysis, Android build checks and signed releases
 ```
 
 ## Android signing key
@@ -286,5 +264,4 @@ from GitHub. The workflow needs permission to write repository contents and to
 push its version commit and tag to `main`; branch protection must allow this
 release automation to update `main`.
 
-The workflow builds Android APK and AAB artifacts. iOS builds require macOS and
-Xcode and are not produced by this Android release workflow.
+The workflow builds Android APK and AAB artifacts.

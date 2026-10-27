@@ -8,7 +8,6 @@
 .svn/
 .build/
 .buildlog/
-.swiftpm/
 migrate_working_dir/
 
 # IDE files
@@ -25,9 +24,10 @@ migrate_working_dir/
 /build/
 /coverage/
 **/doc/api/
-**/ios/Flutter/.last_build_id
 
 # Android build artifacts
+/android/.gradle/
+/android/.kotlin/
 /android/app/debug
 /android/app/profile
 /android/app/release
@@ -48,11 +48,11 @@ app.*.map.json
 .env.*
 !.env.example
 
-# Generated platform files
-/ios/Flutter/Generated.xcconfig
-/ios/Flutter/flutter_export_environment.sh
-/ios/Runner/GeneratedPluginRegistrant.*
+# Local verification outputs
+/artifacts/
+/benchmark/
+/test_driver/
 
-# Keep repository documentation limited to the public project README.
-*.md
-!README.md
+# Private planning notes
+/ideas.md
+/PLATFORM_SETUP.md

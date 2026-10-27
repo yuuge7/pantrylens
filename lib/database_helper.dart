@@ -23,12 +23,19 @@ class PantrySnapshot {
 
 class DatabaseHelper {
   DatabaseHelper._internal();
-  DatabaseHelper.forDatabase(Database db) : _databaseFuture = Future.value(db);
   static final instance = DatabaseHelper._internal();
   factory DatabaseHelper() => instance;
-  static const version = 4;
+  static const version = 5;
   Future<Database>? _databaseFuture;
-  Future<Database> get database => _databaseFuture ??= _open();
+  Future<Database> get database => _databaseFuture ??= _connect();
+  Future<Database> _connect() async {
+    try {
+      return await _open();
+    } catch (_) {
+      _databaseFuture = null;
+      rethrow;
+    }
+  }
 
   Future<Database> _open() async => openDatabase(
     p.join((await getApplicationDocumentsDirectory()).path, 'pantrylens.db'),
@@ -75,7 +82,7 @@ class DatabaseHelper {
       id INTEGER PRIMARY KEY AUTOINCREMENT, homeId TEXT NOT NULL,
       actor TEXT NOT NULL, action TEXT NOT NULL, name TEXT NOT NULL,
       quantity REAL NOT NULL, unit TEXT NOT NULL, value REAL NOT NULL,
-      at TEXT NOT NULL)''');
+      at TEXT NOT NULL, wasteReason TEXT)''');
     await db.execute('''CREATE TABLE stock_rules (
       barcode TEXT NOT NULL, homeId TEXT NOT NULL, unit TEXT NOT NULL,
       name TEXT NOT NULL, minimum REAL NOT NULL, aisle TEXT NOT NULL,
@@ -101,7 +108,11 @@ class DatabaseHelper {
   /// Rebuilds old tables to remove barcode uniqueness without losing row IDs.
   /// v1 had no shopping list; v2 lacked shopping photos and amounts.
   static Future<void> migrate(Database db, int old, int next) async {
-    if (old >= 4) return;
+    if (old >= 4) {
+      if (old < 5)
+        await db.execute('ALTER TABLE activity ADD COLUMN wasteReason TEXT');
+      return;
+    }
     final pantry = await db.query('pantry_items');
     final shopping =
         old >= 2 ? await db.query('shopping_items') : <Map<String, Object?>>[];
@@ -176,25 +187,74 @@ class DatabaseHelper {
 
   Future<int> deleteItem(int id) async =>
       (await database).delete('pantry_items', where: 'id = ?', whereArgs: [id]);
-  Future<int> deleteAllItems({String? homeId}) async => (await database).delete(
-    'pantry_items',
-    where: homeId == null ? null : 'homeId = ?',
-    whereArgs: homeId == null ? null : [homeId],
-  );
+  Future<int> deleteAllItems({String? homeId, String? actor}) async =>
+      (await database).transaction((txn) async {
+        final where = homeId == null ? null : 'homeId = ?';
+        final args = homeId == null ? null : [homeId];
+        if (actor != null) {
+          final history = txn.batch();
+          for (final row in await txn.query(
+            'pantry_items',
+            where: where,
+            whereArgs: args,
+          )) {
+            history.insert(
+              'activity',
+              _inventoryActivity(PantryItem.fromMap(row), actor, 'removed'),
+            );
+          }
+          await history.commit(noResult: true);
+        }
+        return txn.delete('pantry_items', where: where, whereArgs: args);
+      });
+  Map<String, Object?> _inventoryActivity(
+    PantryItem item,
+    String actor,
+    String action,
+  ) =>
+      Activity(
+        homeId: item.homeId,
+        actor: actor,
+        action: action,
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        value: item.value,
+        at: DateTime.now(),
+      ).toMap();
   Future<void> importItems(
     List<PantryItem> items, {
     required bool replaceAll,
+    String? replaceHomeId,
+    String? actor,
   }) async {
     for (final item in items) {
       item.validate();
     }
     await (await database).transaction((txn) async {
+      final history = txn.batch();
       if (replaceAll) {
-        await txn.delete('pantry_items');
-        await txn.delete('stock_rules');
+        final where = replaceHomeId == null ? null : 'homeId=?';
+        final args = replaceHomeId == null ? null : [replaceHomeId];
+        if (actor != null) {
+          for (final row in await txn.query(
+            'pantry_items',
+            where: where,
+            whereArgs: args,
+          )) {
+            history.insert(
+              'activity',
+              _inventoryActivity(PantryItem.fromMap(row), actor, 'removed'),
+            );
+          }
+        }
+        await txn.delete('pantry_items', where: where, whereArgs: args);
+        await txn.delete('stock_rules', where: where, whereArgs: args);
         await txn.delete(
           'shopping_items',
-          where: 'automatic=1 AND isChecked=0',
+          where:
+              'automatic=1 AND isChecked=0${replaceHomeId == null ? '' : ' AND homeId=?'}',
+          whereArgs: args,
         );
       }
       for (final item in items) {
@@ -211,7 +271,13 @@ class DatabaseHelper {
           ).toMap(),
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
+        if (actor != null)
+          history.insert(
+            'activity',
+            _inventoryActivity(item, actor, 'imported'),
+          );
       }
+      if (actor != null) await history.commit(noResult: true);
     });
   }
 
@@ -376,15 +442,19 @@ class DatabaseHelper {
     final batch =
         db.batch()
           ..rawQuery(
-            "SELECT COALESCE(SUM(value),0) AS wasted FROM activity WHERE action='wasted'$home",
+            "SELECT COALESCE(SUM(value),0) AS wasted, COALESCE(SUM(CASE WHEN wasteReason='expired' THEN value ELSE 0 END),0) AS expired, COALESCE(SUM(CASE WHEN wasteReason IS NULL THEN value ELSE 0 END),0) AS unclassified FROM activity WHERE action='wasted'$home",
             args,
           )
           ..rawQuery(
-            "SELECT substr(at,1,7) AS month, SUM(CASE WHEN action='used' THEN value ELSE 0 END) AS used, SUM(CASE WHEN action='wasted' THEN value ELSE 0 END) AS wasted FROM activity WHERE at>=?$home GROUP BY substr(at,1,7)",
+            "SELECT substr(at,1,7) AS month, SUM(CASE WHEN action='used' THEN value ELSE 0 END) AS used, SUM(CASE WHEN action='wasted' THEN value ELSE 0 END) AS wasted, SUM(CASE WHEN action='wasted' AND wasteReason='expired' THEN value ELSE 0 END) AS expired FROM activity WHERE at>=?$home GROUP BY substr(at,1,7)",
             [since, ...args],
           )
           ..rawQuery(
             "SELECT name,unit,SUM(quantity) AS quantity FROM activity WHERE action='used'$home GROUP BY name,unit ORDER BY quantity DESC LIMIT 10",
+            args,
+          )
+          ..rawQuery(
+            "SELECT name,unit,SUM(quantity) AS quantity,SUM(value) AS value FROM activity WHERE action='wasted'$home GROUP BY name,unit ORDER BY value DESC,quantity DESC LIMIT 10",
             args,
           );
     final results = await batch.commit();
@@ -394,8 +464,11 @@ class DatabaseHelper {
             .toList();
     return PantryInsights(
       wastedValue: rows(0).single['wasted'] as num,
+      expiredLoss: rows(0).single['expired'] as num,
+      unclassifiedWaste: rows(0).single['unclassified'] as num,
       months: rows(1),
       mostUsed: rows(2),
+      mostWasted: rows(3),
     );
   }
 

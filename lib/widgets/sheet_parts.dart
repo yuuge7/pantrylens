@@ -77,20 +77,29 @@ class FieldRow extends StatelessWidget {
     final detail = this.detail;
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 64),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label, style: Theme.of(context).textTheme.titleSmall),
-                if (detail != null) ...[const SizedBox(height: 4), detail],
-              ],
-            ),
-          ),
-          child,
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked =
+              constraints.maxWidth < 350 ||
+              MediaQuery.textScalerOf(context).scale(14) > 20;
+          final labelWidget = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label, style: Theme.of(context).textTheme.titleSmall),
+              if (detail != null) ...[const SizedBox(height: 4), detail],
+            ],
+          );
+          if (stacked)
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [labelWidget, const SizedBox(height: 12), child],
+              ),
+            );
+          return Row(children: [Expanded(child: labelWidget), child]);
+        },
       ),
     );
   }
