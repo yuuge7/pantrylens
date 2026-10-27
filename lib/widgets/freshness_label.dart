@@ -26,7 +26,7 @@ String describeExpiry(
   if (relative || days <= 14) return 'Expires in $days days';
   final date = MaterialLocalizations.of(
     context,
-  ).formatShortMonthDay(item.expirationDate);
+  ).formatShortMonthDay(item.effectiveExpiry);
   return 'Best before $date';
 }
 
@@ -70,7 +70,7 @@ class FreshnessLabel extends StatelessWidget {
         Flexible(
           child: Text(
             describeExpiry(item, context, relative: relative),
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(
               color: textColor,

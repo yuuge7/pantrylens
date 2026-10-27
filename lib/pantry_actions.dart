@@ -88,12 +88,14 @@ Future<void> openItemSheet(BuildContext context, PantryItem item) async {
 Future<void> changeQuantity(
   BuildContext context,
   PantryItem item,
-  int quantity,
+  num quantity,
 ) async {
   final pantry = context.read<PantryProvider>();
   final messenger = ScaffoldMessenger.of(context);
   try {
-    await pantry.updateItem(item.copyWith(quantity: quantity));
+    await pantry.changeQuantity(item, quantity - item.quantity);
+    if (context.mounted && context.read<SettingsProvider>().vibrateOnScan)
+      HapticFeedback.selectionClick();
   } catch (_) {
     showSnack(messenger, 'Quantity not saved. Try again.');
   }
@@ -112,7 +114,11 @@ Future<void> removeItemWithUndo(
   final messenger = ScaffoldMessenger.of(context);
 
   try {
-    final removed = await pantry.removeItem(item, addToShoppingList: addToList);
+    final removed = await pantry.removeItem(
+      item,
+      addToShoppingList: addToList,
+      usedUp: usedUp,
+    );
     final text =
         usedUp
             ? removed.shoppingItemId != null
@@ -154,14 +160,19 @@ Future<void> openShoppingItemSheet(
 
 void removeShoppingItemWithUndo(BuildContext context, ShoppingItem item) {
   final pantry = context.read<PantryProvider>();
-  pantry.removeShoppingItem(item).catchError((Object _) {});
+  pantry.removeShoppingItem(item).catchError((Object _) {
+    if (context.mounted) showMessage(context, 'Item not removed. Try again.');
+  });
   showMessage(
     context,
     'Removed ${item.name}',
     action: SnackBarAction(
       label: 'Undo',
       onPressed: () {
-        pantry.restoreShoppingItem(item).catchError((Object _) {});
+        pantry.restoreShoppingItem(item).catchError((Object _) {
+          if (context.mounted)
+            showMessage(context, 'Item not restored. Try again.');
+        });
       },
     ),
   );

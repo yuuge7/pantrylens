@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>PantryLens uses the camera to scan product barcodes and add items to your pantry.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose product photos, receipts and task photos for your household.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

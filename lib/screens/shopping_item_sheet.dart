@@ -23,7 +23,9 @@ class _ShoppingItemSheetState extends State<ShoppingItemSheet> {
   late final TextEditingController _name = TextEditingController(
     text: widget.item.name,
   );
-  late int _quantity = widget.item.quantity;
+  late num _quantity = widget.item.quantity;
+  late String _aisle = widget.item.aisle;
+  late final _store = TextEditingController(text: widget.item.store);
   bool _isSaving = false;
   String? _error;
 
@@ -36,12 +38,15 @@ class _ShoppingItemSheetState extends State<ShoppingItemSheet> {
   @override
   void dispose() {
     _name.dispose();
+    _store.dispose();
     super.dispose();
   }
 
   bool get _hasChanges =>
       _name.text.trim() != widget.item.name ||
-      _quantity != widget.item.quantity;
+      _quantity != widget.item.quantity ||
+      _aisle != widget.item.aisle ||
+      _store.text.trim() != widget.item.store;
 
   /// Saves the edited name and quantity, along with [isChecked] when given.
   Future<void> _save({bool? isChecked}) async {
@@ -57,6 +62,8 @@ class _ShoppingItemSheetState extends State<ShoppingItemSheet> {
           name: name,
           quantity: _quantity,
           isChecked: isChecked,
+          aisle: _aisle,
+          store: _store.text.trim(),
         ),
       );
       if (mounted) Navigator.of(context).pop();
@@ -108,6 +115,23 @@ class _ShoppingItemSheetState extends State<ShoppingItemSheet> {
               ),
             ),
             const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _aisle,
+              decoration: const InputDecoration(labelText: 'Store aisle'),
+              items:
+                  {_aisle, ...PantryItem.categories}
+                      .map((a) => DropdownMenuItem(value: a, child: Text(a)))
+                      .toList(),
+              onChanged: (v) {
+                if (v != null) setState(() => _aisle = v);
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _store,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(labelText: 'Store'),
+            ),
             FieldRow(
               label: 'Quantity to buy',
               detail: Text(

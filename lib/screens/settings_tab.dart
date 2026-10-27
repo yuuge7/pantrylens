@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../pantry_actions.dart';
 import '../pantry_provider.dart';
 import '../settings_provider.dart';
+import '../features/household/household_settings.dart';
+import '../services/error_reporter.dart';
 
 class SettingsTab extends StatefulWidget {
   const SettingsTab({super.key});
@@ -132,6 +134,8 @@ class _SettingsTabState extends State<SettingsTab> {
             },
           ),
         ),
+        const _SectionHeader('Household & daily use'),
+        const HouseholdSettings(),
         const _SectionHeader('Inventory'),
         ListTile(
           leading: const Icon(Icons.event_outlined),
@@ -191,7 +195,8 @@ class _SettingsTabState extends State<SettingsTab> {
         ),
         SwitchListTile(
           secondary: const Icon(Icons.vibration_rounded),
-          title: const Text('Vibrate on scan'),
+          title: const Text('Haptic feedback'),
+          subtitle: const Text('Light feedback for scans and key actions'),
           value: settings.vibrateOnScan,
           onChanged: (value) => settings.vibrateOnScan = value,
         ),
@@ -269,12 +274,12 @@ class _SettingsTabState extends State<SettingsTab> {
             );
           },
         ),
-        const ListTile(
+        ListTile(
           leading: Icon(Icons.lock_outline_rounded),
-          title: Text('Your data stays on this device'),
+          title: const Text('Data & privacy'),
           subtitle: Text(
-            'Only new barcodes are sent to Open Food Facts, and only when '
-            'product lookup is on.',
+            'Inventory and household data stay on this device. Product lookup sends barcodes to Open Food Facts and Open Products Facts; photos are downloaded when displayed. '
+            '${ErrorReporter.dsn.isEmpty ? 'Crash diagnostics stay on this device.' : 'Crash reports are sent to the configured Sentry project.'}',
           ),
         ),
         const ListTile(

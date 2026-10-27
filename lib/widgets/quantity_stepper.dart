@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../pantry_item.dart';
 
 /// A compact minus / count / plus control.
 ///
@@ -14,8 +15,8 @@ class QuantityStepper extends StatelessWidget {
     this.compact = false,
   });
 
-  final int quantity;
-  final ValueChanged<int> onChanged;
+  final num quantity;
+  final ValueChanged<num> onChanged;
   final VoidCallback? onUseUp;
 
   /// Used in button tooltips so screen readers know which item is affected.
@@ -30,7 +31,7 @@ class QuantityStepper extends StatelessWidget {
     final colors = theme.colorScheme;
     final canUseUp = quantity <= 1 && onUseUp != null;
     final suffix = itemName == null ? '' : ' of $itemName';
-    final density = compact ? VisualDensity.compact : null;
+    const density = VisualDensity.standard;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -41,6 +42,7 @@ class QuantityStepper extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             visualDensity: density,
             tooltip: canUseUp ? 'Mark$suffix as used up' : 'Remove one$suffix',
             onPressed:
@@ -55,16 +57,28 @@ class QuantityStepper extends StatelessWidget {
           ),
           ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 22),
-            child: Text(
-              '$quantity',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                fontFeatures: const [FontFeature.tabularFigures()],
+            child: Semantics(
+              label: 'Quantity ${formatAmount(quantity)}',
+              excludeSemantics: true,
+              child: AnimatedSwitcher(
+                duration:
+                    MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 160),
+                child: Text(
+                  formatAmount(quantity),
+                  key: ValueKey(formatAmount(quantity)),
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
               ),
             ),
           ),
           IconButton(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             visualDensity: density,
             tooltip: 'Add one$suffix',
             onPressed: () => onChanged(quantity + 1),

@@ -1,368 +1,634 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
-
 import 'api_service.dart';
 import 'database_helper.dart';
+import 'features/household/household_models.dart';
 import 'pantry_item.dart';
 import 'shopping_item.dart';
+import 'services/error_reporter.dart';
 
-/// What happened when a barcode was scanned.
 class ScanOutcome {
   const ScanOutcome({
     required this.item,
     required this.isNew,
     this.checkedOffShoppingList = false,
   });
-
   final PantryItem item;
-
-  /// True when the barcode created a new pantry item rather than adding one.
   final bool isNew;
-
-  /// True when the scan ticked a matching entry on the shopping list.
   final bool checkedOffShoppingList;
 }
 
-/// A pantry item that was removed, kept so the removal can be undone.
 class RemovedItem {
-  const RemovedItem({required this.item, this.shoppingItemId});
-
+  const RemovedItem({required this.item, this.shoppingItemId, this.activityId});
   final PantryItem item;
-
-  /// The shopping list entry created for the item, if one was added.
   final int? shoppingItemId;
+  final int? activityId;
 }
 
 class PantryProvider extends ChangeNotifier {
   PantryProvider({DatabaseHelper? databaseHelper, ApiService? apiService})
-    : _databaseHelper = databaseHelper ?? DatabaseHelper.instance,
-      _apiService = apiService ?? ApiService() {
-    loadItems();
+    : data = databaseHelper ?? DatabaseHelper.instance,
+      _api = apiService ?? ApiService() {
+    unawaited(loadItems());
+  }
+  final DatabaseHelper data;
+  final ApiService _api;
+  List<PantryItem> _items = [];
+  List<ShoppingItem> _shopping = [];
+  List<Home> homes = [];
+  List<HouseholdRecord> _records = [];
+  List<Activity> _activity = [];
+  bool _loading = true;
+  bool _disposed = false;
+  String? _error;
+  String? _homeId = 'main';
+  String actor = 'Me';
+  Future<void>? _load;
+  Future<void> _writes = Future.value();
+  int revision = 0;
+
+  /// Completes after edits already queued by the UI have reached storage.
+  Future<void> get pendingChanges => _writes;
+  final Set<String> _scanning = {};
+  String? get selectedHomeId => _homeId;
+  String get selectedHomeName =>
+      _homeId == null
+          ? 'All homes'
+          : homes.where((h) => h.id == _homeId).firstOrNull?.name ?? 'My home';
+  List<PantryItem> get allItems => List.unmodifiable(_items);
+  List<PantryItem> get items => _items
+      .where((i) => _homeId == null || i.homeId == _homeId)
+      .toList(growable: false);
+  List<ShoppingItem> get shoppingItems => _shopping
+      .where((i) => _homeId == null || i.homeId == _homeId)
+      .toList(growable: false);
+  List<HouseholdRecord> get records => _records
+      .where((r) => _homeId == null || r.homeId == _homeId)
+      .toList(growable: false);
+  List<Activity> get activity => _activity
+      .where((r) => _homeId == null || r.homeId == _homeId)
+      .toList(growable: false);
+  bool get isLoading => _loading;
+  String? get errorMessage => _error;
+  num get totalUnits => items
+      .where((i) => i.unit == 'pieces')
+      .fold<num>(0, (s, i) => s + i.quantity);
+  num get totalValue => items.fold<num>(0, (s, i) => s + i.value);
+  int get shoppingItemsToBuy => shoppingItems.where((i) => !i.isChecked).length;
+  List<String> get locations =>
+      {
+        ...homes
+            .where((h) => _homeId == null || h.id == _homeId)
+            .expand((h) => h.locations),
+        ...items.map((i) => i.location),
+      }.toList();
+  void selectHome(String? id) {
+    if (id != null && !homes.any((h) => h.id == id)) return;
+    _homeId = id;
+    revision++;
+    _notify();
   }
 
-  final DatabaseHelper _databaseHelper;
-  final ApiService _apiService;
-  final List<PantryItem> _items = [];
-  final List<ShoppingItem> _shoppingItems = [];
-  final Set<String> _barcodesBeingProcessed = {};
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
 
-  bool _isLoading = true;
-  String? _errorMessage;
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 
-  List<PantryItem> get items => List.unmodifiable(_items);
-  List<ShoppingItem> get shoppingItems => List.unmodifiable(_shoppingItems);
-  bool get isLoading => _isLoading;
-
-  /// Set when the pantry could not be read from the database.
-  String? get errorMessage => _errorMessage;
-
-  int get totalUnits => _items.fold(0, (sum, item) => sum + item.quantity);
-  int get shoppingItemsToBuy =>
-      _shoppingItems.where((item) => !item.isChecked).length;
-
-  Future<void> loadItems() async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
+  Future<void> loadItems() =>
+      _load ??= _loadItems().whenComplete(() => _load = null);
+  Future<void> _loadItems() async {
+    _loading = true;
+    _error = null;
+    _notify();
     try {
       await _reload();
-    } catch (_) {
-      _errorMessage =
-          'Your pantry could not be loaded. Check storage and try again.';
+    } catch (e, s) {
+      _error = 'Your pantry could not be loaded. Check storage and try again.';
+      await ErrorReporter.capture(e, s);
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _loading = false;
+      _notify();
     }
   }
 
-  /// Reads both lists before replacing them, so overlapping reloads cannot
-  /// interleave and duplicate entries.
   Future<void> _reload() async {
-    final items = await _databaseHelper.getAllItems();
-    final shoppingItems = await _databaseHelper.getShoppingItems();
-    _items
-      ..clear()
-      ..addAll(items);
-    _shoppingItems
-      ..clear()
-      ..addAll(shoppingItems);
+    final snapshot = await data.getSnapshot();
+    _items = snapshot.items;
+    _shopping = snapshot.shopping;
+    homes = snapshot.homes;
+    _records = snapshot.records;
+    _activity = snapshot.activity;
+    revision++;
   }
 
-  /// Adds one unit for [barcode], creating the item on its first scan.
-  ///
-  /// Returns null when the barcode is empty or already being processed.
+  Future<T> _write<T>(Future<T> Function() action, {bool restock = true}) {
+    final result = _writes.then((_) async {
+      if (_load != null) await _load;
+      try {
+        final value = await action();
+        if (restock) await data.reconcileStock();
+        await _reload();
+        _error = null;
+        return value;
+      } catch (e, s) {
+        _error = 'Changes could not be saved. Check storage and try again.';
+        await ErrorReporter.capture(e, s);
+        rethrow;
+      } finally {
+        _notify();
+      }
+    });
+    _writes = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  Activity _entry(PantryItem i, String action, num quantity) => Activity(
+    homeId: i.homeId,
+    actor: actor,
+    action: action,
+    name: i.name,
+    quantity: quantity,
+    unit: i.unit,
+    value: quantity * i.price,
+    at: DateTime.now(),
+  );
+
   Future<ScanOutcome?> onBarcodeScanned(
     String barcode, {
     int shelfLifeDays = 30,
     bool lookUpProduct = true,
   }) async {
-    final normalizedBarcode = barcode.trim();
-    if (normalizedBarcode.isEmpty ||
-        !_barcodesBeingProcessed.add(normalizedBarcode)) {
-      return null;
-    }
-
+    barcode = barcode.trim();
+    if (barcode.isEmpty || !_scanning.add(barcode)) return null;
+    final code = barcode;
     try {
-      final existingItem = await _databaseHelper.getItemByBarcode(
-        normalizedBarcode,
-      );
-
-      final PantryItem savedItem;
-      if (existingItem != null) {
-        savedItem = existingItem.copyWith(quantity: existingItem.quantity + 1);
-        await _databaseHelper.updateItem(savedItem);
-      } else {
-        final product =
-            lookUpProduct
-                ? await _apiService.fetchProductByBarcode(normalizedBarcode)
-                : const <String, String?>{};
-        final productName = product['product_name']?.trim();
-        final today = DateTime.now();
-
-        final item = PantryItem(
-          barcode: normalizedBarcode,
-          name:
-              productName == null || productName.isEmpty
-                  ? 'Unknown product ($normalizedBarcode)'
-                  : productName,
-          imageUrl: product['image_url'],
-          quantity: 1,
-          expirationDate: DateTime(
-            today.year,
-            today.month,
-            today.day + shelfLifeDays,
-          ),
-        );
-        final id = await _databaseHelper.insertItem(item);
-        savedItem = item.copyWith(id: id);
-      }
-
-      var checkedOff = false;
-      for (final entry in _shoppingItems) {
-        if (!entry.isChecked && entry.barcode == normalizedBarcode) {
-          await _databaseHelper.updateShoppingItem(
-            entry.copyWith(isChecked: true),
+      final product =
+          lookUpProduct && !_items.any((i) => i.barcode == code)
+              ? await _api.fetchProductByBarcode(code)
+              : <String, String?>{};
+      return await _write(() async {
+        final home = _homeId ?? 'main';
+        final now = DateTime.now();
+        final expiry = DateTime(now.year, now.month, now.day + shelfLifeDays);
+        final template = _items.where((i) => i.barcode == code).firstOrNull;
+        final shoppingTemplate =
+            _shopping.where((i) => i.barcode == code).firstOrNull;
+        final existing =
+            _items
+                .where(
+                  (i) =>
+                      i.barcode == code &&
+                      i.homeId == home &&
+                      i.location == 'Pantry' &&
+                      i.unit == 'pieces' &&
+                      i.openedDate == null &&
+                      i.expirationDate == expiry,
+                )
+                .firstOrNull;
+        PantryItem saved;
+        if (existing != null) {
+          saved = existing.copyWith(quantity: existing.quantity + 1);
+          await data.updateItem(saved);
+        } else {
+          final draft = PantryItem(
+            barcode: code,
+            name:
+                template?.name ??
+                product['product_name'] ??
+                shoppingTemplate?.name ??
+                'Unknown product ($code)',
+            imageUrl:
+                template?.imageUrl ??
+                product['image_url'] ??
+                shoppingTemplate?.imageUrl,
+            quantity: 1,
+            expirationDate: expiry,
+            homeId: home,
+            minimumStock: await data.stockMinimum(code, home, 'pieces'),
+            category: template?.category ?? product['category'] ?? 'Other',
+            ingredients: template?.ingredients ?? product['ingredients'] ?? '',
+            allergens:
+                template?.allergens ??
+                (product['allergens'] ?? '')
+                    .split(',')
+                    .where((s) => s.isNotEmpty)
+                    .toList(),
+            nutrition: template?.nutrition ?? product['nutrition'] ?? '',
           );
-          checkedOff = true;
+          final id = await data.insertItem(draft);
+          saved = draft.copyWith(id: id, batchId: draft.batchKey);
         }
+        var checked = false;
+        for (final entry in _shopping.where(
+          (i) => !i.isChecked && i.homeId == home && i.barcode == code,
+        )) {
+          // A single scan supplies one piece, rather than completing a larger order.
+          if (entry.unit != 'pieces') continue;
+          await data.updateShoppingItem(
+            entry.quantity <= 1
+                ? entry.copyWith(isChecked: true)
+                : entry.copyWith(quantity: entry.quantity - 1),
+          );
+          if (entry.quantity <= 1) {
+            checked = true;
+            await data.saveRecord(
+              HouseholdRecord(
+                kind: 'purchase',
+                homeId: entry.homeId,
+                data: entry.copyWith(isChecked: true).toMap(),
+              ),
+            );
+          }
+        }
+        await data.log(_entry(saved, 'added', 1));
+        return ScanOutcome(
+          item: saved,
+          isNew: existing == null,
+          checkedOffShoppingList: checked,
+        );
+      });
+    } finally {
+      _scanning.remove(code);
+    }
+  }
+
+  Future<PantryItem> addBatch(PantryItem item) => _write(() async {
+    final batch = item.copyWith(
+      batchId:
+          item.batchId.isEmpty
+              ? 'batch-${DateTime.now().microsecondsSinceEpoch}'
+              : item.batchId,
+    );
+    final id = await data.insertItem(batch);
+    await data.saveStockRule(batch);
+    await data.log(_entry(batch, 'added', batch.quantity));
+    return batch.copyWith(id: id);
+  });
+  Future<void> addBatches(List<PantryItem> items) => _write(() async {
+    final db = await data.database;
+    for (final item in items) {
+      item.validate();
+    }
+    await db.transaction((txn) async {
+      for (var n = 0; n < items.length; n++) {
+        final item = items[n].copyWith(
+          batchId: 'receipt-${DateTime.now().microsecondsSinceEpoch}-$n',
+        );
+        await txn.insert('pantry_items', item.toMap()..remove('id'));
+        await data.log(_entry(item, 'added', item.quantity), txn: txn);
       }
-
-      await _reload();
-      return ScanOutcome(
-        item: savedItem,
-        isNew: existingItem == null,
-        checkedOffShoppingList: checkedOff,
+    });
+  });
+  Future<void> updateItem(PantryItem item) => _write(() async {
+    final previous = _items.where((i) => i.id == item.id).firstOrNull;
+    if (previous == null) throw StateError('This batch no longer exists.');
+    await data.updateItem(item);
+    // Product corrections apply across purchases; batch-specific fields stay local.
+    if (item.barcode == previous.barcode &&
+        (item.name != previous.name ||
+            item.imageUrl != previous.imageUrl ||
+            item.category != previous.category ||
+            item.ingredients != previous.ingredients ||
+            !listEquals(item.allergens, previous.allergens))) {
+      final db = await data.database;
+      await db.update(
+        'pantry_items',
+        {
+          'name': item.name,
+          'imageUrl': item.imageUrl,
+          'category': item.category,
+          'ingredients': item.ingredients,
+          'allergens': item.toMap()['allergens'],
+          'nutrition': item.nutrition,
+        },
+        where: 'barcode=?',
+        whereArgs: [item.barcode],
       );
-    } finally {
-      _barcodesBeingProcessed.remove(normalizedBarcode);
-      notifyListeners();
     }
-  }
+    await data.saveStockRule(item);
+    final difference = item.quantity - previous.quantity;
+    await data.log(
+      _entry(
+        item,
+        difference < 0
+            ? 'used'
+            : difference > 0
+            ? 'added'
+            : previous.homeId != item.homeId ||
+                previous.location != item.location
+            ? 'moved'
+            : 'edited',
+        difference.abs(),
+      ),
+    );
+  });
+  Future<void> changeQuantity(PantryItem item, num delta) => _write(() async {
+    final current = _items.firstWhere((i) => i.id == item.id);
+    final next = current.copyWith(quantity: current.quantity + delta);
+    await data.updateItem(next);
+    await data.log(_entry(current, delta < 0 ? 'used' : 'added', delta.abs()));
+  });
 
-  Future<void> updateItem(PantryItem item) async {
-    final index = _items.indexWhere((existing) => existing.id == item.id);
-    if (index != -1) {
-      _items[index] = item;
-      notifyListeners();
-    }
-    try {
-      await _databaseHelper.updateItem(item);
-    } finally {
-      await _reloadAndNotify();
-    }
-  }
+  /// Consume the earliest effective expiry first, within one home and unit.
+  Future<void> useProduct(
+    String barcode,
+    num amount, {
+    required String homeId,
+    String unit = 'pieces',
+    bool wasted = false,
+  }) => _write(() async {
+    if (!amount.isFinite || amount <= 0)
+      throw ArgumentError('Enter a positive amount');
+    final batches =
+        _items
+            .where(
+              (i) =>
+                  i.barcode == barcode && i.homeId == homeId && i.unit == unit,
+            )
+            .toList()
+          ..sort((a, b) => a.effectiveExpiry.compareTo(b.effectiveExpiry));
+    if (batches.fold<num>(0, (s, i) => s + i.quantity) < amount)
+      throw StateError('Not enough stock');
+    final db = await data.database;
+    await db.transaction((txn) async {
+      var left = amount;
+      for (final batch in batches) {
+        if (left <= 0) break;
+        final used = left < batch.quantity ? left : batch.quantity;
+        if (used == batch.quantity) {
+          await txn.delete(
+            'pantry_items',
+            where: 'id=?',
+            whereArgs: [batch.id],
+          );
+        } else {
+          await txn.update(
+            'pantry_items',
+            {'quantity': batch.quantity - used},
+            where: 'id=?',
+            whereArgs: [batch.id],
+          );
+        }
+        await data.log(
+          _entry(batch, wasted ? 'wasted' : 'used', used),
+          txn: txn,
+        );
+        left -= used;
+      }
+    });
+  });
 
-  Future<void> changeQuantity(PantryItem item, int delta) {
-    final quantity = item.quantity + delta;
-    if (quantity < 1) {
-      throw RangeError.value(quantity, 'quantity', 'Must be at least 1');
-    }
-    return updateItem(item.copyWith(quantity: quantity));
-  }
-
-  /// Removes [item] from the pantry, optionally adding it to the shopping
-  /// list. The item disappears from [items] before the first await, so a
-  /// dismissed list tile can leave the tree immediately.
   Future<RemovedItem> removeItem(
     PantryItem item, {
     bool addToShoppingList = false,
-  }) async {
-    final id = item.id;
-    if (id == null) {
-      throw ArgumentError.value(item, 'item', 'Item has no database id.');
-    }
-
-    _items.removeWhere((existing) => existing.id == id);
-    notifyListeners();
-
-    try {
-      await _databaseHelper.deleteItem(id);
-      int? shoppingItemId;
-      if (addToShoppingList && !_isOnShoppingList(item)) {
-        shoppingItemId = await _databaseHelper.insertShoppingItem(
+    bool wasted = false,
+    bool usedUp = false,
+  }) => _write(() async {
+    if (item.id == null) throw ArgumentError('Missing batch id');
+    final current = _items.firstWhere((i) => i.id == item.id);
+    final db = await data.database;
+    int? shoppingId;
+    int? logId;
+    await db.transaction((txn) async {
+      await txn.delete('pantry_items', where: 'id=?', whereArgs: [current.id]);
+      if (addToShoppingList &&
+          !_shopping.any(
+            (e) =>
+                !e.isChecked &&
+                e.homeId == current.homeId &&
+                e.barcode == current.barcode &&
+                e.unit == current.unit,
+          )) {
+        shoppingId = await txn.insert(
+          'shopping_items',
           ShoppingItem(
-            name: item.name,
-            barcode: item.barcode,
-            imageUrl: item.imageUrl,
-          ),
+            name: current.name,
+            barcode: current.barcode,
+            imageUrl: current.imageUrl,
+            homeId: current.homeId,
+            unit: current.unit,
+            aisle: current.category,
+            store: current.store,
+          ).toMap(),
         );
       }
-      return RemovedItem(item: item, shoppingItemId: shoppingItemId);
-    } finally {
-      await _reloadAndNotify();
-    }
-  }
-
-  Future<void> restoreItem(RemovedItem removed) async {
-    try {
-      final shoppingItemId = removed.shoppingItemId;
-      if (shoppingItemId != null) {
-        await _databaseHelper.deleteShoppingItem(shoppingItemId);
-      }
-
-      // The same barcode may have been scanned again since the removal.
-      final existing = await _databaseHelper.getItemByBarcode(
-        removed.item.barcode,
+      logId = await data.log(
+        _entry(
+          current,
+          wasted
+              ? 'wasted'
+              : usedUp || addToShoppingList
+              ? 'used'
+              : 'removed',
+          current.quantity,
+        ),
+        txn: txn,
       );
-      if (existing == null) {
-        await _databaseHelper.insertItem(removed.item);
+    });
+    return RemovedItem(
+      item: current,
+      shoppingItemId: shoppingId,
+      activityId: logId,
+    );
+  });
+  Future<void> restoreItem(RemovedItem removed) => _write(() async {
+    final db = await data.database;
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'pantry_items',
+        where: 'batchId=?',
+        whereArgs: [removed.item.batchKey],
+      );
+      if (rows.isEmpty) {
+        await txn.insert('pantry_items', removed.item.toMap()..remove('id'));
       } else {
-        await _databaseHelper.updateItem(
-          existing.copyWith(
-            quantity: existing.quantity + removed.item.quantity,
-          ),
+        await txn.update(
+          'pantry_items',
+          {'quantity': (rows.first['quantity'] as num) + removed.item.quantity},
+          where: 'id=?',
+          whereArgs: [rows.first['id']],
         );
       }
-    } finally {
-      await _reloadAndNotify();
-    }
-  }
-
-  Future<void> clearInventory() async {
-    try {
-      await _databaseHelper.deleteAllItems();
-    } finally {
-      await _reloadAndNotify();
-    }
-  }
-
-  /// Adds [items] from a backup. Items already in the pantry take the
-  /// backup's values; with [replaceAll], the pantry is emptied first.
+      if (removed.shoppingItemId != null)
+        await txn.delete(
+          'shopping_items',
+          where: 'id=?',
+          whereArgs: [removed.shoppingItemId],
+        );
+      if (removed.activityId != null)
+        await txn.delete(
+          'activity',
+          where: 'id=?',
+          whereArgs: [removed.activityId],
+        );
+      await data.log(
+        _entry(removed.item, 'restored', removed.item.quantity),
+        txn: txn,
+      );
+    });
+  });
+  Future<void> clearInventory() => _write(() async {
+    await data.deleteAllItems(homeId: _homeId);
+  });
   Future<void> importItems(
     List<PantryItem> items, {
     required bool replaceAll,
-  }) async {
-    try {
-      await _databaseHelper.importItems(items, replaceAll: replaceAll);
-    } finally {
-      await _reloadAndNotify();
+  }) => _write(() async {
+    await data.importItems(items, replaceAll: replaceAll);
+    for (final item in items) {
+      await data.saveStockRule(item);
     }
-  }
-
-  /// The pantry item [entry] refers to: the same barcode, else the same name.
-  PantryItem? pantryItemFor(ShoppingItem entry) {
-    final name = entry.name.toLowerCase();
-    PantryItem? sameName;
-    for (final item in _items) {
-      if (item.barcode == entry.barcode) return item;
-      if (item.name.toLowerCase() == name) sameName ??= item;
-    }
-    return sameName;
-  }
-
-  bool _isOnShoppingList(PantryItem item) {
-    return _shoppingItems.any(
-      (entry) =>
-          !entry.isChecked &&
-          (entry.barcode == item.barcode ||
-              entry.name.toLowerCase() == item.name.toLowerCase()),
-    );
-  }
-
-  /// Returns false when an unchecked entry with the same name already exists.
+  });
+  PantryItem? pantryItemFor(ShoppingItem entry) =>
+      _items
+          .where(
+            (i) =>
+                i.homeId == entry.homeId &&
+                (i.barcode == entry.barcode ||
+                    i.name.toLowerCase() == entry.name.toLowerCase()),
+          )
+          .firstOrNull;
   Future<bool> addShoppingItem(
     String name, {
     String? barcode,
     String? imageUrl,
-  }) async {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) return false;
-    final duplicate = _shoppingItems.any(
-      (entry) =>
-          !entry.isChecked && entry.name.toLowerCase() == trimmed.toLowerCase(),
+    num quantity = 1,
+    String unit = 'pieces',
+    String aisle = 'Other',
+    String store = '',
+    String? homeId,
+    bool ensureQuantity = false,
+  }) => _write(() async {
+    final h = homeId ?? _homeId ?? 'main';
+    if (name.trim().isEmpty || !quantity.isFinite || quantity <= 0)
+      return false;
+    final duplicate =
+        _shopping
+            .where(
+              (e) =>
+                  !e.isChecked &&
+                  e.homeId == h &&
+                  e.unit == unit &&
+                  e.name.toLowerCase() == name.trim().toLowerCase(),
+            )
+            .firstOrNull;
+    if (duplicate != null) {
+      if (ensureQuantity && quantity > duplicate.quantity) {
+        await data.updateShoppingItem(
+          duplicate.copyWith(quantity: quantity, automatic: false),
+        );
+        return true;
+      }
+      return false;
+    }
+    await data.insertShoppingItem(
+      ShoppingItem(
+        name: name.trim(),
+        barcode: barcode,
+        imageUrl: imageUrl,
+        quantity: quantity,
+        unit: unit,
+        homeId: h,
+        aisle: aisle,
+        store: store,
+      ),
     );
-    if (duplicate) return false;
-
-    try {
-      await _databaseHelper.insertShoppingItem(
-        ShoppingItem(name: trimmed, barcode: barcode, imageUrl: imageUrl),
+    return true;
+  }, restock: false);
+  Future<void> updateShoppingItem(ShoppingItem item) => _write(() async {
+    final before = _shopping.where((s) => s.id == item.id).firstOrNull;
+    final saved = item.copyWith(automatic: false);
+    await data.updateShoppingItem(saved);
+    if (item.isChecked && before?.isChecked == false) {
+      await data.saveRecord(
+        HouseholdRecord(
+          kind: 'purchase',
+          homeId: item.homeId,
+          data: saved.toMap(),
+        ),
       );
-      return true;
-    } finally {
-      await _reloadAndNotify();
     }
+  }, restock: false);
+  Future<void> setShoppingItemChecked(ShoppingItem item, bool checked) =>
+      updateShoppingItem(item.copyWith(isChecked: checked));
+  Future<void> removeShoppingItem(ShoppingItem item) => _write(() async {
+    if (item.id != null) await data.deleteShoppingItem(item.id!);
+  }, restock: false);
+  Future<void> restoreShoppingItem(ShoppingItem item) => _write(() async {
+    await data.insertShoppingItem(item);
+  }, restock: false);
+  Future<void> clearCheckedShoppingItems() => _write(() async {
+    await data.deleteCheckedShoppingItems(homeId: _homeId);
+  }, restock: false);
+  Future<void> clearShoppingList() => _write(() async {
+    await data.deleteAllShoppingItems(homeId: _homeId);
+  }, restock: false);
+  Future<void> saveHome(Home home) => _write(() async {
+    await data.saveHome(home);
+  }, restock: false);
+  Future<void> saveRecord(HouseholdRecord record) => _write(() async {
+    await data.saveRecord(record);
+  }, restock: false);
+  Future<void> deleteRecord(int id) => _write(() async {
+    await data.deleteRecord(id);
+  }, restock: false);
+
+  Set<String> allergyWarnings(PantryItem item) {
+    final warnings = <String>{};
+    final text =
+        '${item.allergens.join(' ')} ${item.ingredients}'.toLowerCase();
+    for (final p in _records.where(
+      (r) => r.kind == 'profile' && r.homeId == item.homeId,
+    )) {
+      for (final a in (p.data['allergies'] as String? ?? '').split(',')) {
+        if (a.trim().isNotEmpty && text.contains(a.trim().toLowerCase()))
+          warnings.add('${p.data['name']}: ${a.trim()}');
+      }
+    }
+    return warnings;
   }
 
-  Future<void> updateShoppingItem(ShoppingItem item) async {
-    final index = _shoppingItems.indexWhere((entry) => entry.id == item.id);
-    if (index != -1) {
-      _shoppingItems[index] = item;
-      notifyListeners();
-    }
-    try {
-      await _databaseHelper.updateShoppingItem(item);
-    } finally {
-      await _reloadAndNotify();
-    }
-  }
-
-  Future<void> setShoppingItemChecked(ShoppingItem item, bool isChecked) {
-    return updateShoppingItem(item.copyWith(isChecked: isChecked));
-  }
-
-  /// Removes [item] immediately from [shoppingItems]; see [removeItem].
-  Future<void> removeShoppingItem(ShoppingItem item) async {
-    final id = item.id;
-    if (id == null) return;
-    _shoppingItems.removeWhere((entry) => entry.id == id);
-    notifyListeners();
-    try {
-      await _databaseHelper.deleteShoppingItem(id);
-    } finally {
-      await _reloadAndNotify();
-    }
-  }
-
-  Future<void> restoreShoppingItem(ShoppingItem item) async {
-    try {
-      await _databaseHelper.insertShoppingItem(item);
-    } finally {
-      await _reloadAndNotify();
-    }
-  }
-
-  Future<void> clearCheckedShoppingItems() async {
-    try {
-      await _databaseHelper.deleteCheckedShoppingItems();
-    } finally {
-      await _reloadAndNotify();
-    }
-  }
-
-  Future<void> clearShoppingList() async {
-    try {
-      await _databaseHelper.deleteAllShoppingItems();
-    } finally {
-      await _reloadAndNotify();
-    }
-  }
-
-  Future<void> _reloadAndNotify() async {
-    try {
-      await _reload();
-    } catch (_) {
-      // Keep the optimistic in-memory state; the next load will retry.
-    }
-    notifyListeners();
+  Future<void> loadSamplePantry() async {
+    if (_loading) await loadItems();
+    final now = DateTime.now();
+    await addBatches([
+      PantryItem(
+        barcode: 'sample-oats',
+        name: 'Rolled oats',
+        quantity: 0.75,
+        unit: 'kg',
+        category: 'Dry goods',
+        price: 4.2,
+        expirationDate: now.add(const Duration(days: 90)),
+        homeId: _homeId ?? 'main',
+      ),
+      PantryItem(
+        barcode: 'sample-yogurt',
+        name: 'Natural yogurt',
+        quantity: 2,
+        category: 'Dairy',
+        location: 'Fridge',
+        price: 1.8,
+        allergens: const ['milk'],
+        expirationDate: now.add(const Duration(days: 2)),
+        homeId: _homeId ?? 'main',
+      ),
+      PantryItem(
+        barcode: 'sample-tomatoes',
+        name: 'Cherry tomatoes',
+        quantity: 0.5,
+        unit: 'kg',
+        category: 'Produce',
+        location: 'Fridge',
+        price: 5,
+        expirationDate: now.add(const Duration(days: 4)),
+        homeId: _homeId ?? 'main',
+      ),
+    ]);
   }
 }

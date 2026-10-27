@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// A product photo on its own screen, with pinch and double-tap zoom.
 class PhotoViewer extends StatefulWidget {
@@ -59,18 +61,21 @@ class _PhotoViewerState extends State<PhotoViewer> {
   }
 
   Widget _photo(String url, ImageErrorWidgetBuilder errorBuilder) {
-    return Image.network(
-      url,
+    if (!url.startsWith('http'))
+      return Image.file(
+        File(url),
+        fit: BoxFit.contain,
+        semanticLabel: 'Photo of ${widget.title}',
+        errorBuilder: errorBuilder,
+      );
+    return CachedNetworkImage(
+      imageUrl: url,
       fit: BoxFit.contain,
-      semanticLabel: 'Photo of ${widget.title}',
-      loadingBuilder:
-          (context, child, progress) =>
-              progress == null
-                  ? child
-                  : const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-      errorBuilder: errorBuilder,
+      placeholder:
+          (context, url) => const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
+      errorWidget: (context, url, error) => errorBuilder(context, error, null),
     );
   }
 

@@ -74,11 +74,19 @@ void main() {
 
     await tester.tap(_tab('Settings'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Dark'));
     await tester.tap(find.text('Dark'));
     await tester.pumpAndSettle();
     expect(
-      Theme.of(tester.element(find.text('Appearance'))).brightness,
+      Theme.of(tester.element(find.byType(NavigationBar))).brightness,
       Brightness.dark,
+    );
+    expect(
+      tester
+          .element(find.byType(NavigationBar))
+          .read<SettingsProvider>()
+          .themeMode,
+      ThemeMode.dark,
     );
 
     await tester.tap(_tab('Inventory'));
@@ -174,7 +182,7 @@ void main() {
       expect(request.method, 'GET');
       expect(
         request.url.toString(),
-        'https://world.openfoodfacts.org/api/v0/product/3017620422003.json',
+        'https://world.openfoodfacts.org/api/v2/product/3017620422003.json',
       );
       expect(request.headers['User-Agent'], 'PantryLens/1.0 (Flutter app)');
 

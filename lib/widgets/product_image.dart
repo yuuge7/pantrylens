@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../screens/photo_viewer.dart';
 
@@ -41,18 +43,20 @@ class ProductImage extends StatelessWidget {
         child:
             url == null
                 ? placeholder
-                : Image.network(
-                  url,
+                : !url.startsWith('http')
+                ? Image.file(
+                  File(url),
                   fit: BoxFit.cover,
-                  cacheWidth:
+                  errorBuilder: (_, __, ___) => placeholder,
+                )
+                : CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.cover,
+                  memCacheWidth:
                       (size * MediaQuery.devicePixelRatioOf(context)).round(),
                   // Show the placeholder until the first frame decodes.
-                  frameBuilder:
-                      (_, child, frame, wasSynchronouslyLoaded) =>
-                          wasSynchronouslyLoaded || frame != null
-                              ? child
-                              : placeholder,
-                  errorBuilder: (_, _, _) => placeholder,
+                  placeholder: (_, __) => placeholder,
+                  errorWidget: (_, _, _) => placeholder,
                 ),
       ),
     );

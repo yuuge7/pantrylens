@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -29,6 +30,14 @@ class SettingsProvider extends ChangeNotifier {
     _vibrateOnScan = prefs.getBool(_vibrateOnScanKey) ?? _vibrateOnScan;
     _addUsedUpToShoppingList =
         prefs.getBool(_addUsedUpKey) ?? _addUsedUpToShoppingList;
+    final extra = prefs.getString('householdSettings');
+    if (extra != null) {
+      try {
+        _extra.addAll((jsonDecode(extra) as Map).cast<String, dynamic>());
+      } catch (_) {
+        /* Fall back to safe defaults for damaged preferences. */
+      }
+    }
   }
 
   static Future<SettingsProvider> load() async {
@@ -48,6 +57,25 @@ class SettingsProvider extends ChangeNotifier {
   static const String _addUsedUpKey = 'addUsedUpToShoppingList';
 
   final SharedPreferences? _prefs;
+  final Map<String, dynamic> _extra = {};
+  bool get onboardingComplete =>
+      _extra['onboardingComplete'] as bool? ?? (_prefs == null);
+  bool get remindersEnabled => _extra['remindersEnabled'] as bool? ?? false;
+  bool get dailyDigest => _extra['dailyDigest'] as bool? ?? true;
+  int get reminderHour => _extra['reminderHour'] as int? ?? 9;
+  int get reminderMinute => _extra['reminderMinute'] as int? ?? 0;
+  int get quietStart => _extra['quietStart'] as int? ?? 22;
+  int get quietEnd => _extra['quietEnd'] as int? ?? 8;
+  String get actorName => _extra['actorName'] as String? ?? 'Me';
+  String get currency => _extra['currency'] as String? ?? 'EUR';
+  String? get homeId =>
+      _extra.containsKey('homeId') ? _extra['homeId'] as String? : 'main';
+  Future<void> setExtra(String key, dynamic value) async {
+    _extra[key] = value;
+    if (_prefs != null)
+      await _prefs.setString('householdSettings', jsonEncode(_extra));
+    notifyListeners();
+  }
 
   ThemeMode _themeMode = ThemeMode.system;
   InventorySort _inventorySort = InventorySort.name;

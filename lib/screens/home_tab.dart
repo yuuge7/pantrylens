@@ -70,7 +70,7 @@ class HomeTab extends StatelessWidget {
         items
             .where((item) => freshnessOf(item, useSoonDays) != Freshness.fresh)
             .toList()
-          ..sort((a, b) => a.expirationDate.compareTo(b.expirationDate));
+          ..sort((a, b) => a.effectiveExpiry.compareTo(b.effectiveExpiry));
     final expiredCount =
         expiring
             .where(
@@ -165,7 +165,7 @@ class _Overview extends StatelessWidget {
   });
 
   final int productCount;
-  final int unitCount;
+  final num unitCount;
   final int useSoonCount;
   final int expiredCount;
   final ValueChanged<InventoryFilter> onOpenInventory;
@@ -182,8 +182,11 @@ class _Overview extends StatelessWidget {
           children: [
             _Stat(
               value: productCount,
-              label: productCount == 1 ? 'product' : 'products',
-              detail: unitCount == 1 ? '1 unit' : '$unitCount units',
+              label: productCount == 1 ? 'batch' : 'batches',
+              detail:
+                  unitCount == 1
+                      ? '1 piece'
+                      : '${formatAmount(unitCount)} pieces',
               onTap: () => onOpenInventory(InventoryFilter.all),
             ),
             const VerticalDivider(width: 1, indent: 16, endIndent: 16),
@@ -386,7 +389,7 @@ class _CompactItemRow extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Text(
-              '×${item.quantity}',
+              item.amountLabel,
               style: theme.textTheme.titleSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 fontFeatures: const [FontFeature.tabularFigures()],

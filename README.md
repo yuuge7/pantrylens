@@ -6,6 +6,49 @@ Open Food Facts, and keep inventory quantities in a local SQLite database.
 
 ## Features
 
+The `ideas.md` roadmap is implemented as local-first household tools:
+
+- Independent product batches, fractional amounts (g, kg, ml, l, pieces and
+  bottles), oldest-first usage, opened-package expiry, tags and categories
+- Multiple homes, custom storage locations, location/category filters and moving
+  batches between homes or locations
+- Minimum-stock rules that generate shopping entries, purchase prices and stores,
+  pantry value, recorded waste, monthly usage and most-used products
+- Camera/library OCR for printed dates and receipts, with review before saving;
+  manual corrections for names, photos, ingredients and allergens
+- Open Food Facts API v2 with Open Products Facts fallback, nutrition per 100 g,
+  household allergy warnings and persistent product-photo caching
+- Local expiry notifications, individual reminders or daily digests, configurable
+  reminder time and quiet hours; Use soon and Shopping home screen widgets
+- Shopping by aisle, system sharing, purchase history and event ingredient lists
+- Assigned staff checklists with due dates and photos; guest/household dietary
+  profiles, allergies and favorites; meal/event planning and an activity log
+- Three-step onboarding with an optional sample pantry, tablet navigation and a
+  two-pane inventory, large-text layouts and labelled controls
+- Local diagnostic logging and optional Sentry crash reporting, schema migration
+  tests, model/provider/backup tests, PR checks and paged inventory queries
+
+Use the home menu to select a property or **All homes**. The **+** menu adds a
+batch, enters a barcode or scans a receipt. Open a batch to set its location,
+amount, opening date, restock threshold and purchase price. The home menu's
+**Manage household** opens tasks, guest profiles, events and activity. **Usage &
+waste** is available from Home and Settings. Set the operator's name in Settings
+before staff use the device; activity records that local name.
+
+Barcode scans add to a matching unopened batch only when its home, default
+location, unit and best-before date match. **Add a batch** always makes an
+independent batch. Usage consumes the earliest effective expiry first within
+the chosen home and unit. Stock thresholds are per product, home and unit and
+continue working after the last batch is used. Receipt OCR supplies suggested
+names, amounts and prices; verify the lines and edit each batch's expiry after
+import. Ambiguous printed dates offer both interpretations for review.
+
+Households are stored on this device. Shopping lists are shared as messages
+through the system share sheet. Inventory JSON exports preserve batches and all
+their fields and accept older v1 exports; they are inventory exports, rather
+than backups of tasks, guest profiles, activity, settings or local photo files.
+There is no account service or automatic cross-device synchronization.
+
 - Barcode scanning with the device camera, flashlight and camera switching, and
   manual barcode entry
 - Open Food Facts product lookup when an item is first scanned
@@ -71,7 +114,9 @@ To run static analysis and the device integration checks:
 
 ```sh
 flutter analyze
+flutter test
 flutter test integration_test/pantrylens_smoke_test.dart -d <device-id>
+flutter test integration_test/roadmap_test.dart -d <device-id>
 ```
 
 The integration checks cover inventory insertion and increments, tab
@@ -80,6 +125,64 @@ editing a shopping list entry, the inventory export format and import, and
 parsing an Open Food Facts response. The API parsing check uses
 a mock HTTP client so it remains deterministic and does not depend on emulator
 DNS or external service availability.
+
+The roadmap integration suite also runs native ML Kit recognition against a
+generated package/receipt image, receipt review/import, household checklists,
+batch/FIFO behavior, widget data, notification scheduling/cancellation and a
+5,000-batch browsing check with frame timing measurements. Unit tests cover migrations from schema versions
+1, 2 and 3, partial amounts, opening dates, idempotent imports, atomic invalid
+imports, concurrent stock changes, minimum-stock rules, dietary profiles,
+receipt/date parsing, event unit conversions and quiet hours. UI tests exercise
+phone, large-text, tablet and landscape sizes.
+
+Inventory reads are limited to 60 rows per page (hard maximum 200), with lazy
+row rendering, indexed home/name/barcode/expiry fields and debounced search.
+The automated budget allows under one second for a 60-row emulator database
+query against 5,000 batches and under 15 seconds for the complete host fixture
+insertion and paging test. Capture scroll performance in profile mode for a
+release decision; debug traces include instrumentation overhead. Cold-start
+target: under two seconds to a usable first screen on a current device. Scroll
+target: 60 fps on a 60 Hz display; these are device performance targets rather
+than guarantees from host unit tests.
+
+The local Android 17/API 37 emulator profile run measured a 3.907-second cold
+Activity launch and 762 ms from Dart entry to its first frame. A 60-row read from
+5,000 batches took 17.135 ms. The physical-device two-second cold-start target
+still needs device validation. Tabs mount on first use, startup reads use one
+consistent database batch, and usage reports aggregate the complete stored
+history independently of the activity feed's display limit.
+
+Build with `--dart-define=PROFILE_STARTUP=true` to print Dart startup milestones
+to the device log. The default build leaves this instrumentation off.
+
+For a full VM timeline on a physical device, run
+`flutter drive --profile --no-dds -d <device-id> --driver=test_driver/integration_test.dart --target=integration_test/roadmap_test.dart --dart-define=CAPTURE_TIMELINE=true`.
+The driver writes measurements to `build/integration_response_data.json`.
+
+## Notifications, widgets and diagnostics
+
+Enable **Expiry reminders** in Settings to request notification permission.
+Quiet hours defer a reminder to their end; equal start/end hours disable quiet
+hours. Daily digests are scheduled 30 days ahead, individual reminders use the
+earliest 60 upcoming batches to respect platform limits, and schedules refresh
+on inventory/settings changes and when the app resumes. Android uses inexact
+alarms, so delivery may be delayed by the OS. Reopen the app periodically to
+refresh the schedule. Both home screen widgets show their last refresh time;
+open the app to update their snapshots.
+
+Android widgets are registered in the manifest. iOS includes an embedded
+WidgetKit extension with both widgets. On a Mac, enable the App Group
+`group.com.pantrylens.pantrylens` for the Runner and PantryLensWidgets targets
+in your Apple Developer provisioning profiles. ML Kit requires iOS 15.5 or
+newer. iOS compilation and signing require Xcode and must be verified on macOS.
+
+Errors are recorded in the app's bounded local diagnostic log, viewable under
+**Settings → Diagnostics**. To enable remote crash reporting for your own
+Sentry project, build with `--dart-define=SENTRY_DSN=<your-dsn>`. No remote
+reporting is initialized without a DSN. Sentry 9 is retained for Android 7
+compatibility, with project-level Kotlin/compile-SDK compatibility settings.
+Photo cache contents may be evicted by the OS; a corrected photo picked from
+the library is copied to the app's documents directory.
 
 ## Contributing
 
@@ -106,10 +209,15 @@ lib/
   shopping_item.dart     Shopping list data model
   screens/               Tab shell, Home, Inventory, Shopping, Settings,
                          item editors, photo viewer, and scanner
+  features/              Adding/OCR, household planning, inventory paging,
+                         insights and onboarding
+  services/              Diagnostics, notifications, widget snapshots and
+                         application lifecycle synchronization
   widgets/               Shared widgets
 assets/
   icon.png               Launcher icon source image
 integration_test/        Device integration checks
+test/                    Model, provider, backup, migration and UI tests
 android/                 Android project and release signing configuration
 ios/                     iOS project
 .github/workflows/       Automated Android release workflow

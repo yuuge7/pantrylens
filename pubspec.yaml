@@ -6,17 +6,26 @@ environment:
   sdk: ">=3.7.0 <4.0.0"
 
 dependencies:
+  cached_network_image: ^4.0.5
   file_picker: ^13.1.0
   flutter:
     sdk: flutter
+  flutter_local_notifications: ^22.3.3
+  flutter_timezone: ^5.1.1
+  google_mlkit_text_recognition: ^0.17.1
+  home_widget: ^0.10.0
   http: ^1.6.0
+  image_picker: ^1.2.4
   mobile_scanner: ^7.4.2
   package_info_plus: ^10.2.1
   path: ^1.9.1
   path_provider: ^2.1.6
   provider: ^6.1.5+1
+  sentry_flutter: 9.9.0
+  share_plus: ^13.3.1
   shared_preferences: ^2.5.5
   sqflite: ^2.4.4
+  timezone: ^0.11.2
 
 dev_dependencies:
   flutter_test:
@@ -24,6 +33,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   flutter_launcher_icons: ^0.14.4
+  sqflite_common_ffi: ^2.4.5
 
 flutter:
   uses-material-design: true
