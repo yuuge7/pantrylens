@@ -46,7 +46,7 @@ class _DocumentScanScreenState extends State<DocumentScanScreen> {
       _busy = true;
       _error = null;
     });
-    final recognizer = TextRecognizer();
+    final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
     try {
       final image = await ImagePicker().pickImage(
         source: source,

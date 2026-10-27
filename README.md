@@ -15,8 +15,8 @@ Local-first tools for pantry inventory and household planning.
 - Minimum-stock rules that generate shopping entries, purchase prices and stores,
   pantry value, expiry-specific losses, partial waste with reasons, monthly usage,
   most-used and most-wasted products
-- Camera/library OCR for printed dates and receipts, with review before saving;
-  manual corrections for names, photos, ingredients and allergens
+- Camera/library OCR for Latin-script printed dates and receipts, with review
+  before saving; manual corrections for names, photos, ingredients and allergens
 - Open Food Facts API v2 with Open Products Facts fallback, nutrition per 100 g,
   household allergy warnings and persistent offline product photos
 - Local expiry notifications, individual reminders or daily digests, configurable
@@ -132,7 +132,8 @@ flutter build apk --debug
 
 Inventory queries use indexed fields, bounded pages and debounced search.
 Tabs load on first use, and usage reports aggregate the complete stored history.
-Pull requests run formatting checks, static analysis and an Android debug build.
+Pull requests run formatting checks, static analysis, an Android debug build and
+release R8 optimization without signing credentials.
 The release workflow analyzes the app before building signed Android artifacts.
 
 ## Notifications, widgets and diagnostics
