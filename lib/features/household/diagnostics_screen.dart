@@ -43,6 +43,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               ? 'Local diagnostics and Sentry reporting are enabled.'
               : 'Errors are recorded on this device. Remote reporting is not configured.',
         ),
+        const SizedBox(height: 8),
+        const Text(
+          'The check button adds an intentional test entry to the log below.',
+        ),
         const SizedBox(height: 16),
         FilledButton.icon(
           onPressed: _busy ? null : _check,
@@ -55,7 +59,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             child: Semantics(liveRegion: true, child: Text(_status!)),
           ),
         const SizedBox(height: 24),
-        Text('Recent errors', style: Theme.of(context).textTheme.titleLarge),
+        Text(
+          'Recent diagnostic entries',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
         const SizedBox(height: 12),
         FutureBuilder<String>(
           future: _log,
